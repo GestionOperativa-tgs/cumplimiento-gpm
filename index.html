@@ -673,7 +673,7 @@ function demoRaw(){
 
 async function cargar(){
   const url = $("sheetUrl").value.trim();
-  saveCfg({ url });
+  if (!DEFAULT_URL) saveCfg({ url });
   if (!url){
     raw = demoRaw(); state.fuente = "demo";
     setStatus("demo", raw.om.length ? "Modo demostración: datos de la copia del dashboard y del listado de planes. Pegá la URL del Apps Script para ver los datos en línea."
@@ -700,7 +700,7 @@ async function cargar(){
 
 (function init(){
   const cfg = loadCfg();
-  $("sheetUrl").value = cfg.url || DEFAULT_URL;
+  $("sheetUrl").value = DEFAULT_URL || cfg.url || "";   // la URL fija del archivo tiene prioridad sobre la guardada en el navegador
   if (cfg.vista) state.vista = cfg.vista;
   state.excl = !!cfg.excl; $("exclAnom").checked = state.excl;
   $("exclAnom").addEventListener("change", e => { state.excl = e.target.checked; saveCfg({ excl: state.excl }); render(); });
