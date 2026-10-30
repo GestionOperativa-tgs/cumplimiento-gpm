@@ -198,6 +198,9 @@
   .mini-list{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;}
   .mini-list .row{display:flex;justify-content:space-between;font-size:12.5px;padding:3px 6px;}
   @media (max-width:980px){.kpi-row.k3{grid-template-columns:1fr;}}
+  .kpi-trio{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:2px 0 2px;}
+  .kpi-trio .n{display:block;font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;}
+  .kpi-trio .t{display:block;font-size:11px;color:var(--text-muted);}
 </style>
 </head>
 <body>
@@ -241,7 +244,7 @@
    CONFIGURACIÓN
    ========================================================= */
 const DEFAULT_URL = "https://script.google.com/macros/s/AKfycbyADJ8Ik5lpVz24LZArEnbeKxc3vVftArrwSo5GAEf0AjjtrgL4Wrf9KOF6TQYixdsbkA/exec";   // URL /exec del Apps Script de cumplimiento
-const GRUPOS = ["Línea", "Medición", "Plantas compresoras", "Otros"];
+const GRUPOS = ["Línea", "Medición", "Plantas compresoras", "Temas", "Otros"];
 const TEMAS = {
   "INSPECCIONES": { grupo: "Línea", desc: "Inspección de instalaciones de superficie" },
   "Mtto XNV":     { grupo: "Línea", desc: "Engrase, purga, verificación y ajuste de XNV" },
@@ -261,8 +264,24 @@ const STORAGE_KEY = "gpm_cumplimiento_cfg";
 
 const MS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
-const PER = { mensual: 12, bimestral: 6, trimestral: 4, cuatrimestral: 3, semestral: 2, anual: 1 };
-const PLURI = ["bienal","trienal","quinquenal","decenal"];
+const PER = { semanal: 52, quincenal: 24, mensual: 12, bimestral: 6, trimestral: 4, cuatrimestral: 3, semestral: 2, anual: 1 };
+const PLURI = ["bienal","trienal","cuatrienal","quinquenal","sexenal","decenal"];
+const nf = (s) => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/* Reglas de estatus SAP (revisión oct-2026) — iguales a las del tablero de OM
+   1) Contiene NEJE o BLOQ -> se excluye   2) CTEC / CERR -> CERRADA   3) LIB -> PENDIENTE
+   4) ABIE: inicio en un mes anterior al del corte -> REPROGRAMADA; del mes del corte o posterior -> PENDIENTE */
+function clasificarEstatus(raw, fi, corte){
+  const t = String(raw || "").trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (!t.length) return "SIN ESTATUS";
+  if (t.includes("NEJE") || t.includes("BLOQ")) return "EXCLUIR";
+  const k = t[0];
+  if (k === "CERRADA" || k.startsWith("CTEC") || k.startsWith("CERR")) return "CERRADA";
+  if (k === "REPROGRAMADA") return "REPROGRAMADA";
+  if (k === "LIBERADA" || k === "ABIERTA" || k === "PENDIENTE" || k.startsWith("LIB")) return "PENDIENTE";
+  if (k.startsWith("ABIE")) return fi && fi.slice(0, 7) < corte.slice(0, 7) ? "REPROGRAMADA" : "PENDIENTE";
+  return "OTRO";
+}
 const DEMO = {};
 
 const $ = (id) => document.getElementById(id);
@@ -311,30 +330,46 @@ function construir(){
   const C = corteInfo(), A = String(C.anio), frac = (C.mes + 1) / 12;
   const planes = new Map();
 
+  const sinActividad = new Map(), eliminados = new Set();
   raw.planes.forEach(r => {
     const p = numPlan(pick(r, "N° Plan", "Plan")); if (!p) return;
+    const obs = nf(pick(r, "Observaciones", "Observación", "Observacion"));
+    if (obs.includes("eliminar")){ eliminados.add(p); return; }          // actividad obsoleta
+    const frec = nf(pick(r, "Frecuencia a usar", "Frecuencia", "Frecuencia SAP"));
+    const prox = String(pick(r, "Próxima actividad", "Proxima actividad")).trim().slice(0, 4);
+    if (PLURI.includes(frec) && /^\d{4}$/.test(prox) && prox !== A){    // no le toca este año
+      if (!planes.has(p)) sinActividad.set(p, { plan: p, desc: String(pick(r, "Descripción", "Descripcion")), frec, prox, tema: String(pick(r, "Tema")).trim() || "Sin tema", oms: [] });
+      return;
+    }
     let pl = planes.get(p);
     if (!pl){
-      const clase = String(pick(r, "Clase Plan", "Clase")).trim().toUpperCase();
+      const clase = String(pick(r, "Clase Plan", "CL OM", "Clase")).trim().toUpperCase();
       const tema = String(pick(r, "Tema")).trim() || "Sin tema";
       pl = { plan: p, desc: String(pick(r, "Descripción", "Descripcion")), clase, tipo: PREDICTIVAS.includes(clase) ? "Predictivo" : "Preventivo",
-             tema, filas: 0, frecs: [], omsAll: [], oms: [] };
+             tema, filas: 0, frecs: [], proxAnio: false, omsAll: [], oms: [] };
       planes.set(p, pl);
+      sinActividad.delete(p);
     }
     pl.filas++;
-    pl.frecs.push(String(pick(r, "Frecuencia a usar", "Frecuencia", "Frecuencia SAP")).trim().toLowerCase());
+    pl.frecs.push(frec);
+    if (PLURI.includes(frec) && prox === A) pl.proxAnio = true;              // plurianual que vence este año
   });
 
-  const fuera = new Map(), correctivas = [];
+  const fuera = new Map(), correctivas = [], excluidas = [];
   raw.om.forEach(r => {
     const o = {
       om: numEq(pick(r, "N° OM", "OM")), clase: String(pick(r, "Clase OM")), ut: String(pick(r, "Ubicación Técnica", "Ubicacion Tecnica")),
-      fi: fecha(pick(r, "Fecha Inicio")), desc: String(pick(r, "Descripción", "Descripcion")), est: String(pick(r, "Estatus")).toUpperCase(),
+      fi: fecha(pick(r, "Fecha Inicio")), desc: String(pick(r, "Descripción", "Descripcion")), sap: String(pick(r, "Estatus")).trim().toUpperCase(),
       plan: numPlan(pick(r, "N° Plan", "Plan")), eq: numEq(pick(r, "Equipo"))
     };
+    o.est = clasificarEstatus(o.sap, o.fi, C.fecha);
+    if (o.est === "EXCLUIR"){ if (o.fi.slice(0, 4) === A) excluidas.push(o); return; }
     if (!o.plan){ if (o.fi.slice(0, 4) === A) correctivas.push(o); return; }
     const pl = planes.get(o.plan);
     if (!pl){
+      if (eliminados.has(o.plan)) return;
+      const sa = sinActividad.get(o.plan);
+      if (sa){ if (o.fi.slice(0, 4) === A) sa.oms.push(o); return; }
       if (o.fi.slice(0, 4) === A){ const f = fuera.get(o.plan) || { plan: o.plan, desc: o.desc, oms: [] }; f.oms.push(o); fuera.set(o.plan, f); }
       return;
     }
@@ -369,7 +404,7 @@ function construir(){
       if (PER[f]){ esp += PER[f]; if (PER[f] > 1) espF += Math.floor(PER[f] * frac); }
       else if (!PLURI.includes(f)) horas = true;
     });
-    if (nPluri) esp += llam.length ? Math.min(nPluri, itemsConLl) : 0;
+    if (nPluri) esp += pl.proxAnio ? nPluri : (llam.length ? Math.min(nPluri, itemsConLl) : 0);
 
     const cnt = llam.filter(l => l.cuenta);
     const venc = cnt.filter(l => l.vencido), cum = venc.filter(l => l.cumplido);
@@ -401,23 +436,28 @@ function construir(){
   });
 
   const claves = Object.keys(TEMAS);
-  const grupoDe = (t) => (TEMAS[t] && TEMAS[t].grupo) || "Otros";
+  const grupoDe = (t) => (TEMAS[t] && TEMAS[t].grupo) || "Temas";
   const temas = [...new Set(lista.map(p => p.tema))].sort((a, b) => {
     const ga = GRUPOS.indexOf(grupoDe(a)), gb = GRUPOS.indexOf(grupoDe(b));
     const ka = claves.indexOf(a), kb = claves.indexOf(b);
     return (ga * 1000 + (ka < 0 ? 999 : ka)) - (gb * 1000 + (kb < 0 ? 999 : kb));
   });
-  M = { C, planes: lista, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas };
+  M = { C, planes: lista, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas,
+        excluidas, sinActividad: [...sinActividad.values()], eliminados: eliminados.size };
 }
 
 function agg(pls){
-  const r = { planes: pls.length, items: 0, esp: 0, venc: 0, cum: 0, pend: 0, cumTope: 0, fut: 0, prox: 0,
+  const r = { planes: pls.length, items: 0, esp: 0, venc: 0, cum: 0, pend: 0, cumTope: 0, fut: 0, prox: 0, nCer: 0, nPen: 0, nRep: 0,
               mOk: Array(12).fill(0), mBad: Array(12).fill(0), mRep: Array(12).fill(0), mFut: Array(12).fill(0) };
   const lim = addDays(M.C.fecha, 30);
   pls.forEach(p => {
     r.items += p.filas; r.esp += p.esp; r.venc += p.venc; r.cum += p.cum; r.pend += p.pend; r.cumTope += p.cumTope; r.fut += p.fut;
     p.meses.forEach((m, i) => { r.mOk[i] += m.ok; r.mBad[i] += m.bad; r.mRep[i] += m.rep; r.mFut[i] += m.fut; });
-    p.llamados.forEach(l => { if (l.cuenta && !l.vencido && !l.cumplido && l.fmin <= lim) r.prox++; });
+    p.llamados.forEach(l => {
+      if (l.cuenta && !l.vencido && !l.cumplido && l.fmin <= lim) r.prox++;
+      if (!l.cuenta) return;
+      if (l.cumplido) r.nCer++; else if (l.reprog) r.nRep++; else r.nPen++;
+    });
   });
   r.pct = r.venc ? r.cum / r.venc : null;
   r.avance = r.esp ? r.cumTope / r.esp : null;
@@ -451,9 +491,13 @@ function kpis(a){
     <div class="kpi-card k-accent"><p class="kpi-label">Cumplimiento a la fecha</p>
       <p class="kpi-value" style="color:${color(a.pct)}">${pctTxt(a.pct)}</p>
       <p class="kpi-sub">${a.cum} de ${a.venc} llamados vencidos ${esc(M.C.txt)}</p></div>
-    <div class="kpi-card k-success"><p class="kpi-label">Avance del año</p>
-      <p class="kpi-value">${pctTxt(a.avance)}</p>
-      <p class="kpi-sub">cumplidos sobre ${a.esp} llamados esperados según frecuencia</p></div>
+    <div class="kpi-card k-success"><p class="kpi-label">Actividades del año</p>
+      <div class="kpi-trio">
+        <div><span class="n" style="color:var(--success-mid)">${a.nCer}</span><span class="t">Cerradas</span></div>
+        <div><span class="n" style="color:var(--warning-mid)">${a.nPen}</span><span class="t">Pendientes</span></div>
+        <div><span class="n" style="color:var(--danger-mid)">${a.nRep}</span><span class="t">Reprogramadas</span></div>
+      </div>
+      <p class="kpi-sub">${a.nCer + a.nPen + a.nRep} llamados del año · pendientes incluye los programados a futuro</p></div>
     <div class="kpi-card k-danger"><p class="kpi-label">Pendientes vencidos</p>
       <p class="kpi-value" style="color:${a.pend ? "var(--danger)" : "inherit"}">${a.pend}</p>
       <p class="kpi-sub">llamados vencidos sin OM cerrada</p></div>
@@ -476,7 +520,11 @@ function chartMes(id, a){
       { label: "Por vencer", data: a.mFut, backgroundColor: "#C9D6E8", stack: "s", borderRadius: 3 }
     ]},
     options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label(c){
+          const tot = c.chart.data.datasets.reduce((s, d, i) => s + (c.chart.isDatasetVisible(i) ? (d.data[c.dataIndex] || 0) : 0), 0);
+          const p = tot ? (c.parsed.y / tot * 100) : 0;
+          return ` ${c.dataset.label}: ${c.parsed.y} (${p.toFixed(p >= 10 || p === 0 ? 0 : 1).replace(".", ",")} % del mes)`; } } } },
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#EEF1F4" } } } }
   });
 }
@@ -501,14 +549,14 @@ function tablaPend(lista, conTema){
   return `<div class="tbl-wrap"><table class="simple"><thead><tr>${conTema ? "<th>Tema</th>" : ""}<th>N° Plan</th><th>Actividad</th><th>Equipo / ubicación</th><th>Fecha inicio</th><th>OM</th><th>Atraso</th></tr></thead><tbody>` +
     lista.slice(0, LIM).map(x => `<tr>${conTema ? `<td>${esc(x.p.tema)}</td>` : ""}<td class="mono">${esc(x.p.plan)}</td><td>${esc(x.l.desc)}</td>
       <td class="mono" style="font-size:11.5px">${esc(x.l.eqTxt)}</td><td>${fmtF(x.l.fmin)}</td>
-      <td>${x.l.oms.slice(0, 3).map(o => `<span class="mono">${esc(o.om)}</span> <span class="chip${o.est.includes("REPROG") ? " rep" : ""}">${esc(o.est.toLowerCase())}</span>`).join("<br>")}${x.l.oms.length > 3 ? `<br><span class="caso">y ${x.l.oms.length - 3} OM más del mismo equipo y mes</span>` : ""}</td>
+      <td>${x.l.oms.slice(0, 3).map(o => `<span class="mono">${esc(o.om)}</span> <span class="chip${o.est.includes("REPROG") ? " rep" : ""}" title="SAP: ${esc(o.sap)}">${esc(o.est.toLowerCase())}</span>`).join("<br>")}${x.l.oms.length > 3 ? `<br><span class="caso">y ${x.l.oms.length - 3} OM más del mismo equipo y mes</span>` : ""}</td>
       <td><span class="chip late">${x.atraso} días</span></td></tr>`).join("") +
     `</tbody></table></div>${lista.length > LIM ? `<p class="more">Se muestran los ${LIM} más atrasados de ${lista.length}. El CSV trae todos.</p>` : ""}`;
 }
 function csvPend(lista){
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const rows = [["Tema","N° Plan","Tipo","Actividad","Equipo/Ubicación","Fecha inicio","OM","Estatus","Días de atraso"]]
-    .concat(lista.map(x => [x.p.tema, x.p.plan, x.p.tipo, x.l.desc, x.l.eqTxt, x.l.fmin, x.l.oms.map(o => o.om).join(" "), x.l.oms.map(o => o.est).join(" / "), x.atraso]));
+    .concat(lista.map(x => [x.p.tema, x.p.plan, x.p.tipo, x.l.desc, x.l.eqTxt, x.l.fmin, x.l.oms.map(o => o.om).join(" "), x.l.oms.map(o => o.est + " (" + o.sap + ")").join(" / "), x.atraso]));
   const blob = new Blob(["\ufeff" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
   a.download = `GPM_llamados_pendientes_${M.C.fecha}.csv`; document.body.appendChild(a); a.click(); a.remove();
@@ -604,7 +652,7 @@ function renderMatriz(pls, f){
       `<td class="num">${p.venc}</td><td class="num">${p.cum}</td><td style="font-weight:600;color:${color(pct)}">${pctTxt(pct)}</td></tr>`;
     if (state.abiertos.has(p.plan)){
       const oms = p.oms.slice().sort((a, b) => a.fi.localeCompare(b.fi));
-      h += `<tr class="det"><td colspan="19">${oms.length ? `<div class="om-list">${oms.map(o => `<div><span class="mono">${esc(o.om)}</span><span>${fmtF(o.fi)}</span><span class="mono" style="color:var(--text-muted)">${esc(o.eq || o.ut)}</span><span class="st chip${o.est.includes("CERRADA") ? " ok" : o.est.includes("REPROG") ? " rep" : ""}">${esc(o.est.toLowerCase())}</span></div>`).join("")}</div>` : "Sin OM en el año."}</td></tr>`;
+      h += `<tr class="det"><td colspan="19">${oms.length ? `<div class="om-list">${oms.map(o => `<div><span class="mono">${esc(o.om)}</span><span>${fmtF(o.fi)}</span><span class="mono" style="color:var(--text-muted)">${esc(o.eq || o.ut)}</span><span class="st chip${o.est.includes("CERRADA") ? " ok" : o.est.includes("REPROG") ? " rep" : ""}" title="SAP: ${esc(o.sap)}">${esc(o.est.toLowerCase())}</span></div>`).join("")}</div>` : "Sin OM en el año."}</td></tr>`;
     }
   });
   $("mx").innerHTML = h + "</tbody></table>";
@@ -629,10 +677,20 @@ function renderControl(){
       <div class="kpi-card k-danger"><p class="kpi-label">Llamados con OM masivas</p><p class="kpi-value">${M.masivas.length}</p><p class="kpi-sub">${UMBRAL_MASIVA} o más OM del mismo equipo en el mismo mes</p></div>
       <div class="kpi-card"><p class="kpi-label">OM correctivas (sin plan)</p><p class="kpi-value">${corr.length}</p><p class="kpi-sub">${corrAb} sin cerrar · fuera del cálculo de cumplimiento</p></div>
     </section>
+    <section class="kpi-row">
+      <div class="kpi-card"><p class="kpi-label">OM excluidas (NEJE / BLOQ)</p><p class="kpi-value">${M.excluidas.length}</p><p class="kpi-sub">no ejecutadas o bloqueadas · fuera del cálculo</p></div>
+      <div class="kpi-card"><p class="kpi-label">Planes plurianuales sin actividad en ${M.C.anio}</p><p class="kpi-value">${M.sinActividad.length}</p><p class="kpi-sub">según "Próxima actividad" · fuera del cálculo</p></div>
+      <div class="kpi-card"><p class="kpi-label">Planes marcados "eliminar plan"</p><p class="kpi-value">${M.eliminados}</p><p class="kpi-sub">actividades obsoletas · fuera del cálculo</p></div>
+      <div class="kpi-card k-warning"><p class="kpi-label">OM de planes que no tocan este año</p><p class="kpi-value">${M.sinActividad.reduce((s, x) => s + x.oms.length, 0)}</p><p class="kpi-sub">revisar fecha de próxima actividad o la OM</p></div>
+    </section>
     <div class="panel"><h3>Planes a revisar</h3><p class="panel-sub">Si la frecuencia está mal cargada, corregí "Frecuencia a usar" en la hoja Planes</p>
       ${obs.length ? `<div class="tbl-wrap"><table class="simple"><thead><tr><th>Situación</th><th>Tema</th><th>N° Plan</th><th>Actividad</th><th>Frecuencia</th><th>Equipos</th><th>Esperados</th><th>Llamados generados</th></tr></thead><tbody>` +
         obs.map(p => `<tr><td>${esc(p.caso)}</td><td>${esc(p.tema)}</td><td class="mono">${esc(p.plan)}</td><td>${esc(p.desc)}</td><td>${esc(p.frecTxt)}</td><td class="num">${p.filas}</td><td class="num">${p.esp}</td><td class="num">${p.nLlam}${p.faltan ? ` <span class="chip late">faltan ${p.faltan}</span>` : ""}</td></tr>`).join("") +
         `</tbody></table></div>` : `<div class="empty">Sin observaciones.</div>`}</div>
+    ${M.sinActividad.some(x => x.oms.length) ? `<div class="panel"><h3>Planes plurianuales con OM en un año que no les toca</h3><p class="panel-sub">La hoja indica otra "Próxima actividad", pero hay OM en ${M.C.anio}</p>
+      <div class="tbl-wrap"><table class="simple"><thead><tr><th>N° Plan</th><th>Tema</th><th>Actividad</th><th>Frecuencia</th><th>Próxima actividad</th><th>OM</th></tr></thead><tbody>` +
+      M.sinActividad.filter(x => x.oms.length).map(x => `<tr><td class="mono">${esc(x.plan)}</td><td>${esc(x.tema)}</td><td>${esc(x.desc)}</td><td>${esc(x.frec)}</td><td class="num">${esc(x.prox)}</td><td>${x.oms.map(o => `<span class="mono">${esc(o.om)}</span> <span class="chip" title="SAP: ${esc(o.sap)}">${esc(o.est.toLowerCase())}</span>`).join("<br>")}</td></tr>`).join("") +
+      `</tbody></table></div></div>` : ""}
     <div class="grid-2">
       <div class="panel"><h3>OM de planes fuera del listado</h3><p class="panel-sub">Planes con OM en el año que no están en la hoja Planes (desactivados o faltantes)</p>
         ${M.fuera.length ? `<div class="tbl-wrap"><table class="simple"><thead><tr><th>N° Plan</th><th>Actividad</th><th>OM</th><th>Cerradas</th></tr></thead><tbody>` +
@@ -653,7 +711,7 @@ function render(){
   if (state.vista === "Resumen") renderResumen();
   else if (state.vista === "Control de datos") renderControl();
   else renderTema(state.vista);
-  $("footer").textContent = `Año ${M.C.anio} · Corte ${fmtF(M.C.fecha)} · ${raw.om.length} OM leídas · ${raw.planes.length} filas de planes · Fuente: ${state.fuente === "demo" ? "datos de demostración" : "Google Sheets (GPM26 + Planes)"}`;
+  $("footer").textContent = `Año ${M.C.anio} · Corte ${fmtF(M.C.fecha)} · ${raw.om.length} OM leídas · ${raw.planes.length} filas de planes · Fuente: ${state.fuente === "demo" ? "datos de demostración" : "Google Sheets"} · ${M.excluidas.length} OM excluidas (NEJE/BLOQ)`;
 }
 
 function llenarCorte(){
