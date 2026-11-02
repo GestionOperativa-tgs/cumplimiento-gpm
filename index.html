@@ -262,13 +262,15 @@ const PREDICTIVAS = ["PM13", "PM14"];
 
 /* =========================================================
    BACKLOG — dotación y tiempos por zona (guía nov-2026)
-   Capacidad semanal = personas × (jornada − viaje diario a planta) × días × disponibilidad
+   Capacidad semanal = personas × horas productivas por día × días × disponibilidad
+   Horas productivas por día = mínimo entre 8 h y (jornada − viaje diario a planta)
    Horas por OM      = viaje a la ubicación (una vez por lugar y día) + horas de tarea
    ========================================================= */
 const BACKLOG = {
   dias: 5,                 // días hábiles por semana
   disponibilidad: 0.85,    // descuenta vacaciones, capacitación, tareas administrativas
-  horasTarea: 5,           // promedio por OM según la guía (formularios, fotos, supervisión ENARSA)
+  horasTarea: 5,
+  maxDiario: 8,            // nadie trabaja más de 8 h productivas por día           // promedio por OM según la guía (formularios, fotos, supervisión ENARSA)
   zonas: {
     TTY: { nombre: "Tratayén", personas: 4, jornada: 9, viajeDiario: 1.5,
            detalle: "2 instrumentistas · 1 mecánico · 1 PAC / oficial de gasoducto", alcance: "Planta Tratayén y TERC-NKTS hasta XNV303" },
@@ -282,11 +284,15 @@ const BACKLOG = {
     { desde: 1,   hasta: 303, zona: "TTY", viaje: 2 },
     { desde: 304, hasta: 313, zona: "ACH", viaje: 1 },
     { desde: 314, hasta: 314, zona: "SQL", viaje: 3 },
-    { desde: 315, hasta: 317, zona: "SQL", viaje: 2 }    // supuesto: falta confirmar
+    { desde: 315, hasta: 315, zona: "SQL", viaje: 2 },
+    { desde: 316, hasta: 316, zona: "SQL", viaje: 1.5 },
+    { desde: 317, hasta: 317, zona: "SQL", viaje: 1 }
   ],
   // Asignación manual de ubicaciones técnicas TERC-NKTS sin XNV (prefijo → zona y viaje)
   manual: [
-    // { prefijo: "TERC-NKTS-AB-PM1001", zona: "TTY", viaje: 2 },
+    { prefijo: "TERC-NKTS-AB-PM1001", zona: "TTY", viaje: 0, lugar: "PM1001 (ingreso Tratayén)" },
+    { prefijo: "TERC-NKTS-AB-PM1002", zona: "TTY", viaje: 0, lugar: "PM1002 (salida Tratayén)" },
+    { prefijo: "TERC-NKTS-AB-PM1003", zona: "SQL", viaje: 0, lugar: "PM1003 (Salliqueló)" },
   ],
   semaforo: [2, 4, 6]      // semanas: < 2 bajo · 2–4 sano · 4–6 alto · > 6 crítico
 };
@@ -849,7 +855,7 @@ function zonaDe(o){
   if (/^OCTY/.test(ut)) return { zona: "TTY", lugar: "Planta Tratayén", viaje: 0 };
   if (/^CCSA/.test(ut)) return { zona: "SQL", lugar: "Planta Salliqueló", viaje: 0 };
   const man = BACKLOG.manual.find(m => ut.startsWith(m.prefijo.toUpperCase()));
-  if (man) return { zona: man.zona, lugar: man.prefijo, viaje: man.viaje };
+  if (man) return { zona: man.zona, lugar: man.lugar || man.prefijo, viaje: man.viaje };
   const m = /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(ut) || /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(o.desc.toUpperCase());
   if (m){
     const n = +m[1], r = BACKLOG.xnv.find(x => n >= x.desde && n <= x.hasta);
@@ -857,7 +863,8 @@ function zonaDe(o){
   }
   return { zona: "SIN", lugar: ut.split("-").slice(0, 4).join("-"), viaje: 0 };
 }
-function capSemana(z){ const c = BACKLOG.zonas[z]; return c ? c.personas * (c.jornada - c.viajeDiario) * BACKLOG.dias * BACKLOG.disponibilidad : 0; }
+const hDia = (c) => Math.min(BACKLOG.maxDiario, c.jornada - c.viajeDiario);
+function capSemana(z){ const c = BACKLOG.zonas[z]; return c ? c.personas * hDia(c) * BACKLOG.dias * BACKLOG.disponibilidad : 0; }
 function nivelBk(sem){ const [a, b, c] = BACKLOG.semaforo; return sem === null ? "" : sem < a ? "low" : sem <= b ? "good" : sem <= c ? "mid" : "bad"; }
 const BK_TXT = { low: "Bajo", good: "Sano", mid: "Alto", bad: "Crítico" };
 const BK_COL = { low: "var(--accent)", good: "var(--success-mid)", mid: "var(--warning-mid)", bad: "var(--danger-mid)" };
@@ -958,11 +965,11 @@ function renderBacklog(){
         <b>Backlog</b> = OM pendientes o reprogramadas con fecha de inicio vencida al corte, sin las anuladas, las NEJE/BLOQ ni las excedentes sobre la frecuencia del plan.<br>
         <b>Semanas de backlog</b> = horas-hombre pendientes ÷ capacidad semanal de la zona.<br>
         <b>Horas por OM</b> = viaje (una sola vez por lugar y día) + ${B.base === "sap" ? `campo Trabajo de SAP (${BACKLOG.horasTarea} h si está vacío o en 0)` : `${BACKLOG.horasTarea} h de tarea`}.<br>
-        <b>Capacidad semanal</b> = personas × (jornada − viaje diario a planta) × ${BACKLOG.dias} días × ${Math.round(BACKLOG.disponibilidad * 100)}% de disponibilidad.</p>
-      <div class="tbl-wrap"><table class="simple"><thead><tr><th>Zona</th><th>Dotación</th><th>Alcance</th><th class="num">Personas</th><th class="num">Jornada</th><th class="num">Viaje diario</th><th class="num">HH/semana</th></tr></thead><tbody>
-        ${zr.map(z => `<tr><td>${esc(z.cfg.nombre)}</td><td>${esc(z.cfg.detalle)}</td><td>${esc(z.cfg.alcance)}</td><td class="num">${z.cfg.personas}</td><td class="num">${z.cfg.jornada} h</td><td class="num">${h1(z.cfg.viajeDiario)} h</td><td class="num"><b>${h1(z.cap)}</b></td></tr>`).join("")}
+        <b>Capacidad semanal</b> = personas × horas productivas por día × ${BACKLOG.dias} días × ${Math.round(BACKLOG.disponibilidad * 100)}% de disponibilidad. Horas productivas por día = la menor entre ${BACKLOG.maxDiario} h y (jornada − viaje diario a planta).</p>
+      <div class="tbl-wrap"><table class="simple"><thead><tr><th>Zona</th><th>Dotación</th><th>Alcance</th><th class="num">Personas</th><th class="num">Jornada</th><th class="num">Viaje diario</th><th class="num">H productivas/día</th><th class="num">HH/semana</th></tr></thead><tbody>
+        ${zr.map(z => `<tr><td>${esc(z.cfg.nombre)}</td><td>${esc(z.cfg.detalle)}</td><td>${esc(z.cfg.alcance)}</td><td class="num">${z.cfg.personas}</td><td class="num">${z.cfg.jornada} h</td><td class="num">${h1(z.cfg.viajeDiario)} h</td><td class="num">${h1(hDia(z.cfg))} h</td><td class="num"><b>${h1(z.cap)}</b></td></tr>`).join("")}
       </tbody></table></div>
-      <p class="more">Viaje a válvulas: hasta XNV303 ${BACKLOG.xnv[0].viaje} h (Tratayén) · XNV304–313 ${BACKLOG.xnv[1].viaje} h (Acha) · XNV314 ${BACKLOG.xnv[2].viaje} h · XNV315–317 ${BACKLOG.xnv[3].viaje} h (Salliqueló). Las tareas en planta no suman viaje.</p></div>`;
+      <p class="more">Viaje a válvulas: hasta XNV303 ${BACKLOG.xnv[0].viaje} h (Tratayén) · XNV304–313 ${BACKLOG.xnv[1].viaje} h (Acha) · XNV314 ${BACKLOG.xnv[2].viaje} h · XNV315 ${BACKLOG.xnv[3].viaje} h · XNV316 ${h1(BACKLOG.xnv[4].viaje)} h · XNV317 ${BACKLOG.xnv[5].viaje} h (Salliqueló). Las tareas en planta y en PM1001/1002/1003 no suman viaje.</p></div>`;
 
   $("bkBase").addEventListener("change", e => { state.bkBase = e.target.value; saveCfg({ bkBase: state.bkBase }); renderBacklog(); });
   if ($("csvBk")) $("csvBk").addEventListener("click", () => {
