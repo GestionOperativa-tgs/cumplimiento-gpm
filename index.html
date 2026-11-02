@@ -259,6 +259,37 @@ const TEMAS = {
   "PC SQL":       { grupo: "Plantas compresoras", desc: "Planta Compresora Salliqueló" }
 };
 const PREDICTIVAS = ["PM13", "PM14"];
+
+/* =========================================================
+   BACKLOG — dotación y tiempos por zona (guía nov-2026)
+   Capacidad semanal = personas × (jornada − viaje diario a planta) × días × disponibilidad
+   Horas por OM      = viaje a la ubicación (una vez por lugar y día) + horas de tarea
+   ========================================================= */
+const BACKLOG = {
+  dias: 5,                 // días hábiles por semana
+  disponibilidad: 0.85,    // descuenta vacaciones, capacitación, tareas administrativas
+  horasTarea: 5,           // promedio por OM según la guía (formularios, fotos, supervisión ENARSA)
+  zonas: {
+    TTY: { nombre: "Tratayén", personas: 4, jornada: 9, viajeDiario: 1.5,
+           detalle: "2 instrumentistas · 1 mecánico · 1 PAC / oficial de gasoducto", alcance: "Planta Tratayén y TERC-NKTS hasta XNV303" },
+    ACH: { nombre: "General Acha", personas: 5, jornada: 9, viajeDiario: 0,
+           detalle: "2 instrumentistas · 2 mecánicos · 1 oficial de gasoducto", alcance: "TERC-NKTS de XNV304 a XNV313" },
+    SQL: { nombre: "Salliqueló", personas: 3, jornada: 9, viajeDiario: 0.5,
+           detalle: "1 mecánico · 1 instrumentista · 1 oficial de gasoducto", alcance: "Planta Salliqueló y TERC-NKTS de XNV314 a XNV317" }
+  },
+  // Viaje desde la base hasta la válvula (horas)
+  xnv: [
+    { desde: 1,   hasta: 303, zona: "TTY", viaje: 2 },
+    { desde: 304, hasta: 313, zona: "ACH", viaje: 1 },
+    { desde: 314, hasta: 314, zona: "SQL", viaje: 3 },
+    { desde: 315, hasta: 317, zona: "SQL", viaje: 2 }    // supuesto: falta confirmar
+  ],
+  // Asignación manual de ubicaciones técnicas TERC-NKTS sin XNV (prefijo → zona y viaje)
+  manual: [
+    // { prefijo: "TERC-NKTS-AB-PM1001", zona: "TTY", viaje: 2 },
+  ],
+  semaforo: [2, 4, 6]      // semanas: < 2 bajo · 2–4 sano · 4–6 alto · > 6 crítico
+};
 const UMBRAL_MASIVA = 3;           // OM del mismo equipo y mes para considerar creación masiva
 const STORAGE_KEY = "gpm_cumplimiento_cfg";
 /* ========================================================= */
@@ -422,16 +453,18 @@ function construir(){
     if (PLURI.includes(frec) && prox === A) pl.proxAnio = true;              // plurianual que vence este año
   });
 
-  const fuera = new Map(), correctivas = [], excluidas = [], anuladas = [];
+  const fuera = new Map(), correctivas = [], excluidas = [], anuladas = [], validas = [];
   raw.om.forEach(r => {
     const o = {
       om: numEq(pick(r, "N° OM", "OM")), clase: String(pick(r, "Clase OM")), ut: String(pick(r, "Ubicación Técnica", "Ubicacion Tecnica")),
       fi: fecha(pick(r, "Fecha Inicio")), desc: String(pick(r, "Descripción", "Descripcion")), sap: String(pick(r, "Estatus")).trim().toUpperCase(),
-      plan: numPlan(pick(r, "N° Plan", "Plan")), eq: numEq(pick(r, "Equipo"))
+      plan: numPlan(pick(r, "N° Plan", "Plan")), eq: numEq(pick(r, "Equipo")),
+      grupo: String(pick(r, "Grupo")), trab: parseFloat(String(pick(r, "Trabajo", "Trabajo plan", "Horas planificadas")).replace(",", ".")) || 0
     };
     if (OM_ANULADAS.has(o.om)){ anuladas.push(o); return; }
     o.est = clasificarEstatus(o.sap, o.fi, C.fecha);
     if (o.est === "EXCLUIR"){ if (o.fi.slice(0, 4) === A) excluidas.push(o); return; }
+    validas.push(o);
     if (!o.plan){ if (o.fi.slice(0, 4) === A) correctivas.push(o); return; }
     const pl = planes.get(o.plan);
     if (!pl){
@@ -538,7 +571,8 @@ function construir(){
     const ka = claves.indexOf(a), kb = claves.indexOf(b);
     return (ga * 1000 + (ka < 0 ? 999 : ka)) - (gb * 1000 + (kb < 0 ? 999 : kb));
   });
-  M = { C, planes: lista, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas,
+  const omExced = new Set(lista.flatMap(pl => pl.llamados.filter(l => l.exced).flatMap(l => l.oms.map(o => o.om))));
+  M = { C, planes: lista, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas, validas, omExced,
         excluidas, anuladas, temasUnificados, sinActividad: [...sinActividad.values()], eliminados: eliminados.size };
 }
 
@@ -571,7 +605,7 @@ function renderTabs(){
   const grupos = {};
   M.temas.forEach(t => (grupos[M.grupoDe(t)] = grupos[M.grupoDe(t)] || []).push(t));
   const mk = (n, pct) => `<button class="tab${state.vista === n ? " active" : ""}" data-v="${esc(n)}">${esc(n)}${pct !== undefined ? `<span class="pct ${nivel(pct)}">${pctTxt(pct)}</span>` : ""}</button>`;
-  let h = `<div class="tab-group">${mk("Resumen")}</div>`;
+  let h = `<div class="tab-group">${mk("Resumen")}${mk("Backlog")}</div>`;
   GRUPOS.concat(Object.keys(grupos).filter(g => !GRUPOS.includes(g))).forEach(g => {
     if (!grupos[g]) return;
     h += `<div class="tab-group"><span class="tab-group-label">${esc(g)}</span>${grupos[g].map(t => mk(t, agg(M.planes.filter(p => p.tema === t)).pct)).join("")}</div>`;
@@ -809,13 +843,157 @@ function renderControl(){
     </div>`;
 }
 
+/* ---------- Vista: Backlog ---------- */
+function zonaDe(o){
+  const ut = o.ut.toUpperCase();
+  if (/^OCTY/.test(ut)) return { zona: "TTY", lugar: "Planta Tratayén", viaje: 0 };
+  if (/^CCSA/.test(ut)) return { zona: "SQL", lugar: "Planta Salliqueló", viaje: 0 };
+  const man = BACKLOG.manual.find(m => ut.startsWith(m.prefijo.toUpperCase()));
+  if (man) return { zona: man.zona, lugar: man.prefijo, viaje: man.viaje };
+  const m = /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(ut) || /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(o.desc.toUpperCase());
+  if (m){
+    const n = +m[1], r = BACKLOG.xnv.find(x => n >= x.desde && n <= x.hasta);
+    if (r) return { zona: r.zona, lugar: "XNV" + n, viaje: r.viaje };
+  }
+  return { zona: "SIN", lugar: ut.split("-").slice(0, 4).join("-"), viaje: 0 };
+}
+function capSemana(z){ const c = BACKLOG.zonas[z]; return c ? c.personas * (c.jornada - c.viajeDiario) * BACKLOG.dias * BACKLOG.disponibilidad : 0; }
+function nivelBk(sem){ const [a, b, c] = BACKLOG.semaforo; return sem === null ? "" : sem < a ? "low" : sem <= b ? "good" : sem <= c ? "mid" : "bad"; }
+const BK_TXT = { low: "Bajo", good: "Sano", mid: "Alto", bad: "Crítico" };
+const BK_COL = { low: "var(--accent)", good: "var(--success-mid)", mid: "var(--warning-mid)", bad: "var(--danger-mid)" };
+const h1 = (x) => (Math.round(x * 10) / 10).toLocaleString("es-AR");
+
+function modeloBacklog(){
+  const base = state.bkBase || "guia";
+  const C = M.C, finAnio = `${C.anio}-12-31`;
+  const items = M.validas.filter(o => (o.est === "PENDIENTE" || o.est === "REPROGRAMADA") && !M.omExced.has(o.om) && o.fi && o.fi <= finAnio)
+    .map(o => {
+      const z = zonaDe(o);
+      const tarea = base === "sap" ? (o.trab > 0 ? o.trab : BACKLOG.horasTarea) : BACKLOG.horasTarea;
+      return Object.assign({}, o, z, { tarea, vencida: o.fi <= C.fecha, edad: o.fi <= C.fecha ? dias(o.fi, C.fecha) : 0,
+        tipo: !o.plan ? "Correctivo" : PREDICTIVAS.includes(String(o.clase).toUpperCase()) ? "Predictivo" : "Preventivo" });
+    });
+  // el viaje se cuenta una sola vez por lugar y día
+  const viajes = new Map();
+  items.forEach(i => { const k = `${i.zona}|${i.lugar}|${i.fi}`; if (!viajes.has(k)){ viajes.set(k, true); i.viajeImp = i.viaje; } else i.viajeImp = 0; i.hh = i.tarea + i.viajeImp; });
+  const zonas = ["TTY", "ACH", "SQL", "SIN"].map(z => {
+    const its = items.filter(i => i.zona === z), bk = its.filter(i => i.vencida), fut = its.filter(i => !i.vencida);
+    const cap = capSemana(z), hh = bk.reduce((s, i) => s + i.hh, 0);
+    const mesesFut = [];
+    for (let m = C.mes; m < 12; m++){
+      const pre = `${C.anio}-${pad(m + 1)}`;
+      mesesFut.push({ m, hh: fut.filter(i => i.fi.slice(0, 7) === pre).reduce((s, i) => s + i.hh, 0), n: fut.filter(i => i.fi.slice(0, 7) === pre).length });
+    }
+    const edad = [0, 0, 0, 0]; bk.forEach(i => { edad[i.edad <= 30 ? 0 : i.edad <= 60 ? 1 : i.edad <= 90 ? 2 : 3] += i.hh; });
+    return { z, cfg: BACKLOG.zonas[z], its, bk, fut, cap, hh, sem: cap ? hh / cap : null, mesesFut, edad,
+      rep: bk.filter(i => i.est === "REPROGRAMADA").length, corr: bk.filter(i => i.tipo === "Correctivo").length,
+      sinTrab: its.filter(i => !(i.trab > 0)).length };
+  });
+  const capT = zonas.reduce((s, z) => s + z.cap, 0), hhT = zonas.filter(z => z.z !== "SIN").reduce((s, z) => s + z.hh, 0);
+  return { base, items, zonas, capT, hhT, semT: capT ? hhT / capT : null };
+}
+
+function renderBacklog(){
+  const B = modeloBacklog(), C = M.C;
+  const bkAll = B.items.filter(i => i.vencida), viejas = bkAll.filter(i => i.edad > 90).length;
+  const sin = B.zonas.find(z => z.z === "SIN");
+  const zr = B.zonas.filter(z => z.z !== "SIN");
+  const MSF = MESES.map(m => m[0].toUpperCase() + m.slice(1));
+  $("view").innerHTML = `
+    <div class="view-head"><h2>Backlog de mantenimiento</h2><p>Trabajo pendiente vencido al corte (${fmtF(C.fecha)}) expresado en semanas de la dotación de cada zona</p></div>
+    <div class="filters" style="margin-bottom:12px">
+      <span style="font-size:12px;color:var(--text-muted)">Horas por OM:</span>
+      <select id="bkBase" aria-label="Base de horas">
+        <option value="guia"${B.base === "guia" ? " selected" : ""}>Guía: viaje + ${BACKLOG.horasTarea} h de tarea</option>
+        <option value="sap"${B.base === "sap" ? " selected" : ""}>SAP: viaje + campo Trabajo (si está vacío, ${BACKLOG.horasTarea} h)</option>
+      </select>
+    </div>
+    <section class="kpi-row">
+      <div class="kpi-card k-accent"><p class="kpi-label">Backlog GPM</p>
+        <p class="kpi-value" style="color:${BK_COL[nivelBk(B.semT)] || "inherit"}">${B.semT === null ? "—" : h1(B.semT)} sem</p>
+        <p class="kpi-sub">${BK_TXT[nivelBk(B.semT)] || ""} · referencia sana: ${BACKLOG.semaforo[0]} a ${BACKLOG.semaforo[1]} semanas</p></div>
+      <div class="kpi-card"><p class="kpi-label">Horas-hombre pendientes</p><p class="kpi-value">${h1(B.hhT)}</p>
+        <p class="kpi-sub">contra ${h1(B.capT)} HH disponibles por semana</p></div>
+      <div class="kpi-card k-warning"><p class="kpi-label">OM en backlog</p><p class="kpi-value">${bkAll.length}</p>
+        <p class="kpi-sub">${bkAll.filter(i => i.est === "REPROGRAMADA").length} reprogramadas · ${bkAll.filter(i => i.tipo === "Correctivo").length} correctivas</p></div>
+      <div class="kpi-card k-danger"><p class="kpi-label">Con más de 90 días</p><p class="kpi-value">${viejas}</p>
+        <p class="kpi-sub">${bkAll.length ? Math.round(viejas / bkAll.length * 100) : 0}% del backlog</p></div>
+    </section>
+    <section class="kpi-row" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
+      ${zr.map(z => { const n = nivelBk(z.sem); return `<div class="kpi-card" style="border-top-color:${BK_COL[n] || "var(--border)"}">
+        <p class="kpi-label">${esc(z.cfg.nombre)}</p>
+        <p class="kpi-value" style="color:${BK_COL[n] || "inherit"}">${z.sem === null ? "—" : h1(z.sem)} sem <span class="chip" style="vertical-align:middle">${BK_TXT[n] || ""}</span></p>
+        <p class="kpi-sub">${h1(z.hh)} HH pendientes · ${z.bk.length} OM · capacidad ${h1(z.cap)} HH/sem</p>
+        <p class="kpi-sub">${esc(z.cfg.detalle)}</p></div>`; }).join("")}
+      ${sin.its.length ? `<div class="kpi-card" style="border-top-color:var(--border-strong)"><p class="kpi-label">Sin zona asignada</p>
+        <p class="kpi-value">${sin.bk.length} OM</p><p class="kpi-sub">${h1(sin.hh)} HH · no entran en las semanas. Ver detalle abajo.</p></div>` : ""}
+    </section>
+    <div class="grid-2">
+      <div class="panel"><h3>Antigüedad del backlog</h3><p class="panel-sub">Horas-hombre pendientes según días desde la fecha de inicio de la OM</p>
+        <div class="chart-box" style="height:260px"><canvas id="chBkEdad"></canvas></div></div>
+      <div class="panel"><h3>Carga programada contra capacidad</h3><p class="panel-sub">OM ya liberadas o abiertas con fecha de inicio por venir, por mes. El porcentaje es la carga sobre la capacidad mensual.</p>
+        <div class="tbl-wrap"><table class="simple"><thead><tr><th>Zona</th><th class="num">Backlog actual</th>${zr[0].mesesFut.map(x => `<th class="num">${MSF[x.m].slice(0, 3)}</th>`).join("")}</tr></thead><tbody>
+        ${zr.map(z => { const capM = z.cap * 4.33; return `<tr><td>${esc(z.cfg.nombre)}<div class="caso">${h1(capM)} HH/mes</div></td>
+          <td class="num">${h1(z.hh)} HH</td>
+          ${z.mesesFut.map(x => { const u = capM ? x.hh / capM : 0; const c = u > 1 ? "late" : u > 0.85 ? "now" : ""; return `<td class="num">${x.n ? `${h1(x.hh)} HH<br><span class="chip ${c}">${Math.round(u * 100)}%</span>` : "—"}</td>`; }).join("")}</tr>`; }).join("")}
+        </tbody></table></div>
+        <p class="more">Si el mes en curso y los siguientes vienen con poca carga, revisá si SAP ya liberó las OM hasta diciembre.</p></div>
+    </div>
+    <div class="panel"><div class="panel-head"><div><h3>OM en backlog</h3><p class="panel-sub">De la más antigua a la más reciente, con la zona y las horas estimadas</p></div>
+      ${bkAll.length ? `<button class="btn" id="csvBk">Descargar CSV</button>` : ""}</div>
+      ${bkAll.length ? `<div class="tbl-wrap"><table class="simple"><thead><tr><th>Zona</th><th>Lugar</th><th>N° OM</th><th>Actividad</th><th>Tipo</th><th>Inicio</th><th class="num">Días</th><th>Estatus</th><th class="num">Viaje</th><th class="num">Tarea</th><th class="num">HH</th></tr></thead><tbody>` +
+        bkAll.slice().sort((a, b) => b.edad - a.edad).slice(0, 120).map(i => `<tr><td>${esc(i.zona === "SIN" ? "Sin zona" : BACKLOG.zonas[i.zona].nombre)}</td><td class="mono" style="font-size:11.5px">${esc(i.lugar)}</td>
+          <td class="mono">${esc(i.om)}</td><td>${esc(i.desc)}</td><td>${i.tipo}</td><td>${fmtF(i.fi)}/${i.fi.slice(2, 4)}</td>
+          <td class="num"><span class="chip${i.edad > 90 ? " late" : i.edad > 30 ? " now" : ""}">${i.edad}</span></td>
+          <td><span class="chip${i.est === "REPROGRAMADA" ? " rep" : ""}" title="SAP: ${esc(i.sap)}">${esc(i.est.toLowerCase())}</span></td>
+          <td class="num">${i.viajeImp ? h1(i.viajeImp) : "—"}</td><td class="num">${h1(i.tarea)}</td><td class="num"><b>${h1(i.hh)}</b></td></tr>`).join("") +
+        `</tbody></table></div>${bkAll.length > 120 ? `<p class="more">Se muestran las 120 más antiguas de ${bkAll.length}. El CSV trae todas.</p>` : ""}` : `<div class="empty">No hay OM vencidas pendientes.</div>`}</div>
+    ${sin.its.length ? `<div class="panel"><h3>Ubicaciones sin zona asignada</h3><p class="panel-sub">TERC-NKTS sin número de XNV reconocible. Indicá a qué zona pertenecen para sumarlas al backlog.</p>
+      <div class="tbl-wrap"><table class="simple"><thead><tr><th>Ubicación (prefijo)</th><th class="num">OM vencidas</th><th class="num">OM programadas</th><th>Ejemplo</th></tr></thead><tbody>` +
+      Object.values(sin.its.reduce((a, i) => { const x = a[i.lugar] || (a[i.lugar] = { l: i.lugar, v: 0, f: 0, ej: i.desc }); i.vencida ? x.v++ : x.f++; return a; }, {}))
+        .sort((a, b) => (b.v + b.f) - (a.v + a.f)).map(x => `<tr><td class="mono">${esc(x.l)}</td><td class="num">${x.v}</td><td class="num">${x.f}</td><td>${esc(x.ej)}</td></tr>`).join("") +
+      `</tbody></table></div></div>` : ""}
+    <div class="panel"><h3>Cómo se calcula</h3>
+      <p class="panel-sub" style="line-height:1.6">
+        <b>Backlog</b> = OM pendientes o reprogramadas con fecha de inicio vencida al corte, sin las anuladas, las NEJE/BLOQ ni las excedentes sobre la frecuencia del plan.<br>
+        <b>Semanas de backlog</b> = horas-hombre pendientes ÷ capacidad semanal de la zona.<br>
+        <b>Horas por OM</b> = viaje (una sola vez por lugar y día) + ${B.base === "sap" ? `campo Trabajo de SAP (${BACKLOG.horasTarea} h si está vacío o en 0)` : `${BACKLOG.horasTarea} h de tarea`}.<br>
+        <b>Capacidad semanal</b> = personas × (jornada − viaje diario a planta) × ${BACKLOG.dias} días × ${Math.round(BACKLOG.disponibilidad * 100)}% de disponibilidad.</p>
+      <div class="tbl-wrap"><table class="simple"><thead><tr><th>Zona</th><th>Dotación</th><th>Alcance</th><th class="num">Personas</th><th class="num">Jornada</th><th class="num">Viaje diario</th><th class="num">HH/semana</th></tr></thead><tbody>
+        ${zr.map(z => `<tr><td>${esc(z.cfg.nombre)}</td><td>${esc(z.cfg.detalle)}</td><td>${esc(z.cfg.alcance)}</td><td class="num">${z.cfg.personas}</td><td class="num">${z.cfg.jornada} h</td><td class="num">${h1(z.cfg.viajeDiario)} h</td><td class="num"><b>${h1(z.cap)}</b></td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="more">Viaje a válvulas: hasta XNV303 ${BACKLOG.xnv[0].viaje} h (Tratayén) · XNV304–313 ${BACKLOG.xnv[1].viaje} h (Acha) · XNV314 ${BACKLOG.xnv[2].viaje} h · XNV315–317 ${BACKLOG.xnv[3].viaje} h (Salliqueló). Las tareas en planta no suman viaje.</p></div>`;
+
+  $("bkBase").addEventListener("change", e => { state.bkBase = e.target.value; saveCfg({ bkBase: state.bkBase }); renderBacklog(); });
+  if ($("csvBk")) $("csvBk").addEventListener("click", () => {
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [["Zona","Lugar","N° OM","Actividad","Tipo","Fecha inicio","Días","Estatus","Estatus SAP","Trabajo SAP","Viaje","Tarea","HH"]]
+      .concat(bkAll.map(i => [i.zona === "SIN" ? "Sin zona" : BACKLOG.zonas[i.zona].nombre, i.lugar, i.om, i.desc, i.tipo, i.fi, i.edad, i.est, i.sap, i.trab, i.viajeImp, i.tarea, i.hh]));
+    const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `GPM_backlog_${C.fecha}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  });
+  if (window.Chart && $("chBkEdad")){
+    if (charts.bk) charts.bk.destroy();
+    const cols = ["#2E9A57", "#D9B21C", "#D98A1C", "#D2434A"], labs = ["0–30 días", "31–60 días", "61–90 días", "Más de 90 días"];
+    charts.bk = new Chart($("chBkEdad"), {
+      type: "bar",
+      data: { labels: zr.map(z => z.cfg.nombre), datasets: labs.map((l, k) => ({ label: l, data: zr.map(z => Math.round(z.edad[k] * 10) / 10), backgroundColor: cols[k], stack: "s", borderRadius: 2, maxBarThickness: 34 })) },
+      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } },
+          tooltip: { callbacks: { label(c){ const t = zr[c.dataIndex].hh; return ` ${c.dataset.label}: ${h1(c.parsed.x)} HH (${t ? Math.round(c.parsed.x / t * 100) : 0}%)`; } } } },
+        scales: { x: { stacked: true, beginAtZero: true, title: { display: true, text: "HH" }, grid: { color: "#EEF1F4" } }, y: { stacked: true, grid: { display: false } } } }
+    });
+  }
+}
+
 /* ---------- Render general ---------- */
 function render(){
   construir();
-  if (!["Resumen", "Control de datos"].includes(state.vista) && !M.temas.includes(state.vista)) state.vista = "Resumen";
+  if (!["Resumen", "Backlog", "Control de datos"].includes(state.vista) && !M.temas.includes(state.vista)) state.vista = "Resumen";
   renderTabs();
   if (state.vista === "Resumen") renderResumen();
   else if (state.vista === "Control de datos") renderControl();
+  else if (state.vista === "Backlog") renderBacklog();
   else renderTema(state.vista);
   $("footer").textContent = `Año ${M.C.anio} · Corte ${fmtF(M.C.fecha)} · ${raw.om.length} OM leídas · ${raw.planes.length} filas de planes · Fuente: ${state.fuente === "demo" ? "datos de demostración" : "Google Sheets"} · ${M.excluidas.length} OM excluidas (NEJE/BLOQ) · ${M.anuladas.length} anuladas`;
 }
@@ -866,6 +1044,7 @@ async function cargar(){
   const cfg = loadCfg();
   $("sheetUrl").value = DEFAULT_URL || cfg.url || "";   // la URL fija del archivo tiene prioridad sobre la guardada en el navegador
   if (cfg.vista) state.vista = cfg.vista;
+  if (cfg.bkBase) state.bkBase = cfg.bkBase;
   state.excl = !!cfg.excl; $("exclAnom").checked = state.excl;
   $("exclAnom").addEventListener("change", e => { state.excl = e.target.checked; saveCfg({ excl: state.excl }); render(); });
   llenarCorte();
