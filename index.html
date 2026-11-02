@@ -296,9 +296,15 @@ const BACKLOG = {
     CD: { desde: 309, hasta: 313, zona: "ACH", viaje: 1,   nombre: "Tramo C-D (XNV309 a XNV313)" },
     DE: { desde: 314, hasta: 317, zona: "SQL", viaje: 2,   nombre: "Tramo D-E (XNV314 a XNV317)" }
   },
-  // Código SAP de 5 dígitos de válvula: 1.º dígito = tramo (1 AB, 2 BC, 3 CD, 4 DE), 2.º = orden en el tramo
-  //   ej. XNV22001 = 2.ª válvula del tramo B-C = XNV305
-  codTramo: { 1: "AB", 2: "BC", 3: "CD", 4: "DE" },
+  // Códigos de 5 dígitos = trampas de scraper. La carga se calcula con la XNV de proximidad.
+  //   xnv: válvula más cercana (define zona y viaje) · si no hay xnv se usan zona y viaje directos
+  trampas: {
+    1: { nombre: "Trampa Tratayén",        zona: "TTY", viaje: 0 },
+    2: { nombre: "Trampa Casa de Piedra",  xnv: 305 },
+    3: { nombre: "Trampa Chacharramendi",  zona: "ACH", viaje: 1 },   // falta confirmar XNV de proximidad
+    4: { nombre: "Trampa Doblas",          zona: "ACH", viaje: 1 },   // falta confirmar XNV de proximidad
+    5: { nombre: "Trampa Salliqueló",      zona: "SQL", viaje: 0 }
+  },
   // Ubicaciones puntuales (prefijo → zona y viaje). Se evalúan antes que el resto.
   manual: [
     { prefijo: "TERC-NKTS-AB-PM1001", zona: "TTY", viaje: 0, lugar: "PM1001 (ingreso Tratayén)" },
@@ -879,11 +885,15 @@ function zonaPorTramo(t){
   return r ? { zona: r.zona, lugar: r.nombre, viaje: r.viaje } : null;
 }
 function xnvDe(txt){
-  // código de 5 dígitos (XNV22001) → número 3xx
-  let m = /XNV[\s\-_]*([1-4])(\d)(\d{3})(?!\d)/.exec(txt);
-  if (m){ const t = BACKLOG.codTramo[m[1]], tr = BACKLOG.tramos[t]; if (tr) return tr.desde + (+m[2]) - 1; }
-  m = /XNV[\s\-_]*0*(3\d\d)(?!\d)/.exec(txt);
+  const m = /XNV[\s\-_]*0*(3\d\d)(?!\d)/.exec(txt);
   return m ? +m[1] : null;
+}
+function trampaDe(txt){
+  // código de 5 dígitos de trampa de scraper (XNV22001, TSL20001, SRP 12001) → XNV de proximidad
+  const m = /(?:XNV|TSL|SRP)[\s\-_]*([1-5])\d{4}(?!\d)/.exec(txt);
+  const t = m && BACKLOG.trampas[m[1]]; if (!t) return null;
+  if (t.xnv){ const z = zonaPorValvula(t.xnv); if (z) return Object.assign(z, { lugar: `${t.nombre} (XNV${t.xnv})` }); }
+  return { zona: t.zona, lugar: t.nombre, viaje: t.viaje };
 }
 function zonaDe(o){
   const ut = o.ut.toUpperCase(), desc = o.desc.toUpperCase();
@@ -891,7 +901,8 @@ function zonaDe(o){
   if (/^CCSA/.test(ut)) return { zona: "SQL", lugar: "Planta Salliqueló", viaje: 0 };
   const man = BACKLOG.manual.filter(m => ut.startsWith(m.prefijo.toUpperCase())).sort((a, b) => b.prefijo.length - a.prefijo.length)[0];
   if (man) return { zona: man.zona, lugar: man.lugar || man.prefijo, viaje: man.viaje };
-  // 1) válvula identificada en la ubicación técnica
+  // 1) trampa de scraper o válvula identificada en la ubicación técnica
+  let tz = trampaDe(ut); if (tz) return tz;
   let n = xnvDe(ut); if (n){ const z = zonaPorValvula(n); if (z) return z; }
   // 2) tarea de tramo: la descripción dice "Tramo …" → manda el primer XNV mencionado (o "Tratayén")
   if (/TRAMO/.test(desc)){
@@ -899,7 +910,8 @@ function zonaDe(o){
     const t = /TRAMO\s+(TRATAY|TTY)/.test(desc) ? "AB" : nd ? Object.keys(BACKLOG.tramos).find(k => nd >= BACKLOG.tramos[k].desde && nd <= BACKLOG.tramos[k].hasta) : null;
     if (t){ const z = zonaPorTramo(t); if (z) return z; }
   }
-  // 3) válvula mencionada en la descripción
+  // 3) trampa o válvula mencionada en la descripción
+  tz = trampaDe(desc); if (tz) return tz;
   n = xnvDe(desc); if (n){ const z = zonaPorValvula(n); if (z) return z; }
   // 4) tramo según la ubicación técnica (TERC-NKTS-BC-…)
   const mt = /^TERC-NKTS-([A-G]{2})(?:-|$)/.exec(ut);
