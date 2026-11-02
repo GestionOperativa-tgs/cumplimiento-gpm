@@ -289,10 +289,30 @@ const BACKLOG = {
     { desde: 317, hasta: 317, zona: "SQL", viaje: 1 }
   ],
   // Asignación manual de ubicaciones técnicas TERC-NKTS sin XNV (prefijo → zona y viaje)
+  // Tramos del gasoducto: base que los atiende y viaje promedio para tareas de tramo completo
+  tramos: {
+    AB: { desde: 301, hasta: 303, zona: "TTY", viaje: 2,   nombre: "Tramo A-B (Tratayén a XNV303)" },
+    BC: { desde: 304, hasta: 308, zona: "ACH", viaje: 1,   nombre: "Tramo B-C (XNV304 a XNV308)" },
+    CD: { desde: 309, hasta: 313, zona: "ACH", viaje: 1,   nombre: "Tramo C-D (XNV309 a XNV313)" },
+    DE: { desde: 314, hasta: 317, zona: "SQL", viaje: 2,   nombre: "Tramo D-E (XNV314 a XNV317)" }
+  },
+  // Código SAP de 5 dígitos de válvula: 1.º dígito = tramo (1 AB, 2 BC, 3 CD, 4 DE), 2.º = orden en el tramo
+  //   ej. XNV22001 = 2.ª válvula del tramo B-C = XNV305
+  codTramo: { 1: "AB", 2: "BC", 3: "CD", 4: "DE" },
+  // Ubicaciones puntuales (prefijo → zona y viaje). Se evalúan antes que el resto.
   manual: [
     { prefijo: "TERC-NKTS-AB-PM1001", zona: "TTY", viaje: 0, lugar: "PM1001 (ingreso Tratayén)" },
     { prefijo: "TERC-NKTS-AB-PM1002", zona: "TTY", viaje: 0, lugar: "PM1002 (salida Tratayén)" },
-    { prefijo: "TERC-NKTS-AB-PM1003", zona: "SQL", viaje: 0, lugar: "PM1003 (Salliqueló)" },
+    { prefijo: "TERC-NKTS-AB-PM1090", zona: "TTY", viaje: 0, lugar: "PM1090 (Tratayén)" },
+    { prefijo: "TERC-NKTS-DE-PM1004", zona: "TTY", viaje: 0, lugar: "PM1004 (Tratayén)" },
+    { prefijo: "TERC-NKTS-AB-ME",     zona: "TTY", viaje: 0, lugar: "EMED 1001 (Tratayén)" },
+    { prefijo: "TERC-NKTS-AB-TRAMPA", zona: "TTY", viaje: 0, lugar: "Trampa TSL10001 (Tratayén)" },
+    { prefijo: "TERC-NKTS-DE-PM1003", zona: "SQL", viaje: 0, lugar: "PM1003 (Salliqueló)" },
+    { prefijo: "TERC-NKTS-DE-PM1009", zona: "SQL", viaje: 0, lugar: "PM1009 (Salliqueló)" },
+    { prefijo: "TERC-NKTS-DE-PM1010", zona: "SQL", viaje: 0, lugar: "PM1010 (Salliqueló)" },
+    { prefijo: "TERC-NKTS-DE-ME",     zona: "SQL", viaje: 0, lugar: "Medición (Salliqueló)" },
+    { prefijo: "TERC-NKTS-FG-ME",     zona: "SQL", viaje: 0, lugar: "Punto de recepción (Salliqueló)" },
+    { prefijo: "TERC-NKTS-AB-PM1003", zona: "SQL", viaje: 0, lugar: "PM1003 (Salliqueló)" }
   ],
   semaforo: [2, 4, 6]      // semanas: < 2 bajo · 2–4 sano · 4–6 alto · > 6 crítico
 };
@@ -850,17 +870,40 @@ function renderControl(){
 }
 
 /* ---------- Vista: Backlog ---------- */
+function zonaPorValvula(n){
+  const r = BACKLOG.xnv.find(x => n >= x.desde && n <= x.hasta);
+  return r ? { zona: r.zona, lugar: "XNV" + n, viaje: r.viaje } : null;
+}
+function zonaPorTramo(t){
+  const r = BACKLOG.tramos[t];
+  return r ? { zona: r.zona, lugar: r.nombre, viaje: r.viaje } : null;
+}
+function xnvDe(txt){
+  // código de 5 dígitos (XNV22001) → número 3xx
+  let m = /XNV[\s\-_]*([1-4])(\d)(\d{3})(?!\d)/.exec(txt);
+  if (m){ const t = BACKLOG.codTramo[m[1]], tr = BACKLOG.tramos[t]; if (tr) return tr.desde + (+m[2]) - 1; }
+  m = /XNV[\s\-_]*0*(3\d\d)(?!\d)/.exec(txt);
+  return m ? +m[1] : null;
+}
 function zonaDe(o){
-  const ut = o.ut.toUpperCase();
+  const ut = o.ut.toUpperCase(), desc = o.desc.toUpperCase();
   if (/^OCTY/.test(ut)) return { zona: "TTY", lugar: "Planta Tratayén", viaje: 0 };
   if (/^CCSA/.test(ut)) return { zona: "SQL", lugar: "Planta Salliqueló", viaje: 0 };
-  const man = BACKLOG.manual.find(m => ut.startsWith(m.prefijo.toUpperCase()));
+  const man = BACKLOG.manual.filter(m => ut.startsWith(m.prefijo.toUpperCase())).sort((a, b) => b.prefijo.length - a.prefijo.length)[0];
   if (man) return { zona: man.zona, lugar: man.lugar || man.prefijo, viaje: man.viaje };
-  const m = /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(ut) || /XNV[\s\-_]*0*(\d{1,3})(?!\d)/.exec(o.desc.toUpperCase());
-  if (m){
-    const n = +m[1], r = BACKLOG.xnv.find(x => n >= x.desde && n <= x.hasta);
-    if (r) return { zona: r.zona, lugar: "XNV" + n, viaje: r.viaje };
+  // 1) válvula identificada en la ubicación técnica
+  let n = xnvDe(ut); if (n){ const z = zonaPorValvula(n); if (z) return z; }
+  // 2) tarea de tramo: la descripción dice "Tramo …" → manda el primer XNV mencionado (o "Tratayén")
+  if (/TRAMO/.test(desc)){
+    const nd = xnvDe(desc);
+    const t = /TRAMO\s+(TRATAY|TTY)/.test(desc) ? "AB" : nd ? Object.keys(BACKLOG.tramos).find(k => nd >= BACKLOG.tramos[k].desde && nd <= BACKLOG.tramos[k].hasta) : null;
+    if (t){ const z = zonaPorTramo(t); if (z) return z; }
   }
+  // 3) válvula mencionada en la descripción
+  n = xnvDe(desc); if (n){ const z = zonaPorValvula(n); if (z) return z; }
+  // 4) tramo según la ubicación técnica (TERC-NKTS-BC-…)
+  const mt = /^TERC-NKTS-([A-G]{2})(?:-|$)/.exec(ut);
+  if (mt){ const z = zonaPorTramo(mt[1]); if (z) return z; }
   return { zona: "SIN", lugar: ut.split("-").slice(0, 4).join("-"), viaje: 0 };
 }
 const hDia = (c) => Math.min(BACKLOG.maxDiario, c.jornada - c.viajeDiario);
