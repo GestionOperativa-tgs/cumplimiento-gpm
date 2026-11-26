@@ -34,3 +34,16 @@ En la Vista anual hay un selector **"Planes sin OM en el año"**. Abarca los cas
 - **Ver solo estos:** la grilla muestra solo esos planes, por agrupación, sector y tema, para revisarlos en SAP. El CSV trae la columna Situación.
 
 La elección queda guardada en el navegador. Esos planes no tienen llamados vencidos, así que no modifican el % de cumplimiento a la fecha.
+
+## Relevamiento de planes (nov-2026)
+
+La constante `RELEVAMIENTO` (al principio del script) carga el relevamiento "Observaciones de Planes", plan por plan. Prevalece sobre la bajada de SAP y solo se aplica al año `RELEV_ANIO` (2026).
+
+- **Eliminar del tablero:** planes no activos o con un error a corregir. No se muestran ni cuentan, y sus OM salen también del backlog.
+- **Acomodar la frecuencia para 2027:** quedan fuera de 2026. Se reincorporan en 2027, después de ajustar la frecuencia en SAP.
+- **Realizado:** cuenta como cumplido aunque la OM falte en la bajada, esté NEJE o figure en la lista de anuladas. Se marca en el mes de la fecha de realización.
+- **Pendiente / Traer a diciembre:** se programa como llamado pendiente en diciembre. Con el corte Hoy no figura como vencido; con el corte Cierre de diciembre, sí.
+- **Dar de alta equipo en SAP y lanzar plan:** se lista en Control de datos y no cambia el cálculo.
+- Si el relevamiento trae N° de OM, el ajuste es por equipo: esa OM representa al equipo y las otras OM del mismo plan y ubicación técnica en el año quedan reemplazadas. Sin N° de OM, el ajuste es por plan, y si no hay OM en la bajada se agrega un llamado "s/OM".
+- Lo confirmado por el relevamiento no se toma como excedente sobre la frecuencia.
+- En la Vista anual las marcas ajustadas llevan un asterisco (*), y el detalle se ve al pasar el mouse. En Control de datos hay un panel con cada fila del relevamiento y la OM con que quedó en el tablero.

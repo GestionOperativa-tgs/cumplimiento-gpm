@@ -446,6 +446,90 @@ const OM_ANULADAS = new Set([
   "101206400","101206401","101206402","101206403","101206404","101206405","101206406","101206407","101206408","101206409",
   "101206410","101206411","101206412","101206413","101206414"
 ]);
+/* =========================================================
+   RELEVAMIENTO DE PLANES (nov-2026, "Observaciones de Planes")
+   Ajustes confirmados en campo que prevalecen sobre la bajada de SAP, solo para el año RELEV_ANIO.
+   - eliminar  : plan no activo o con error a corregir → no se muestra ni cuenta.
+   - 2027      : la frecuencia se acomoda en SAP para 2027 → fuera del año.
+   - realizado : confirmado como hecho → cuenta como cumplido aunque falte la OM o esté NEJE / anulada.
+   - pendiente : se ejecuta en diciembre → llamado pendiente en diciembre (no vencido con corte Hoy).
+   - revisar   : acción en SAP sin efecto en el cálculo (se lista en Control de datos).
+   Con N° de OM, el ajuste es por equipo: esa OM representa al equipo (ubicación técnica) y las otras
+   OM del mismo plan y ubicación en el año quedan reemplazadas. Sin N° de OM, el ajuste es por plan.
+   ========================================================= */
+const RELEV_ANIO = "2026";
+const RELEVAMIENTO = [
+  { plan: "31095", ut: "TERC-NKTS", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31103", ut: "TERC-NKTS", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31502", ut: "CCSA", om: "", accion: "revisar", fecha: "", nota: "No lanzado · Dar de alta equipo en SAP y lanzar plan" },
+  { plan: "31688", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "31692", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "31694", ut: "TERC-NKTS", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32069", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32070", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32071", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32074", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32076", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32077", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32080", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32082", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32084", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32085", ut: "CCSA", om: "", accion: "pendiente", fecha: "", nota: "No realizado 2025 + NEJE · Pendiente" },
+  { plan: "32086", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32088", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32089", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32092", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "32094", ut: "CCSA", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV12001", om: "101205958", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV301", om: "101205960", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV302", om: "101205962", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV303", om: "101205964", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV305", om: "101205966", accion: "realizado", fecha: "2026-10-15", nota: "Realizado 15/10/2026" },
+  { plan: "29927", ut: "TERC-NKTS-AB-VALVUL-XNV304", om: "101205968", accion: "realizado", fecha: "2026-10-13", nota: "Realizado 13/10/2026" },
+  { plan: "29928", ut: "TERC-NKTS-BC-VALVUL-XNV22001", om: "101205990", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29928", ut: "TERC-NKTS-BC-VALVUL-XNV306", om: "101205991", accion: "realizado", fecha: "2026-10-16", nota: "Realizado 16/10/2026" },
+  { plan: "29928", ut: "TERC-NKTS-BC-VALVUL-XNV307", om: "101205992", accion: "realizado", fecha: "2026-10-16", nota: "Realizado 16/10/2026" },
+  { plan: "29928", ut: "TERC-NKTS-BC-VALVUL-XNV308", om: "101205993", accion: "realizado", fecha: "2026-10-16", nota: "Realizado 16/10/2026" },
+  { plan: "29928", ut: "TERC-NKTS-BC-VALVUL-XNV309", om: "101205994", accion: "realizado", fecha: "2026-10-16", nota: "Realizado 16/10/2026" },
+  { plan: "29929", ut: "TERC-NKTS-CD-VALVUL-XNV310", om: "101206036", accion: "realizado", fecha: "2026-09-10", nota: "Realizado 10/09/2026" },
+  { plan: "29929", ut: "TERC-NKTS-CD-VALVUL-XNV311", om: "101206038", accion: "realizado", fecha: "2026-09-15", nota: "Realizado 15/09/2026" },
+  { plan: "29929", ut: "TERC-NKTS-CD-VALVUL-XNV312", om: "101206040", accion: "realizado", fecha: "2026-09-15", nota: "Realizado 15/09/2026" },
+  { plan: "29929", ut: "TERC-NKTS-CD-VALVUL-XNV313", om: "101206042", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29929", ut: "TERC-NKTS-CD-VALVUL-XNV32001", om: "101206044", accion: "realizado", fecha: "2026-10-14", nota: "Realizado 14/10/2026" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV314", om: "101206106", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV315", om: "101206108", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV316", om: "101206110", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV317", om: "101206112", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV42001", om: "101206114", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29930", ut: "TERC-NKTS-DE-VALVUL-XNV52001", om: "101206116", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "31511", ut: "CCSA-12000", om: "", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "31512", ut: "CCSA-02000", om: "", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "31513", ut: "CCSA-05000", om: "", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "31514", ut: "CCSA-06000", om: "", accion: "pendiente", fecha: "", nota: "Pendiente" },
+  { plan: "29678", ut: "TERC-NKTS-DE-PM1004-TE-4011", om: "101067878", accion: "realizado", fecha: "2025-05-07", nota: "Realizado 07/05/2025" },
+  { plan: "29681", ut: "TERC-NKTS-DE-PM1004-UM-4011", om: "101066651", accion: "realizado", fecha: "2025-05-07", nota: "Realizado 07/05/2025" },
+  { plan: "31510", ut: "CCSA", om: "", accion: "pendiente", fecha: "2025-12-04", nota: "Realizado 04/12/2025 · Pendiente Diciembre 2026" },
+  { plan: "31247", ut: "OCTY", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "31496", ut: "CCSA", om: "101106074", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "31518", ut: "CCSA", om: "101106082", accion: "pendiente", fecha: "", nota: "OM 2026 NEJE · Pendiente" },
+  { plan: "29896", ut: "TERC-NKTS-AB", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "29897", ut: "TERC-NKTS-BC", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "29898", ut: "TERC-NKTS-CD", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "29899", ut: "TERC-NKTS-DE", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "31394", ut: "TERC-NKTS-AB-ME-PM1001", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "31395", ut: "TERC-NKTS-AB-ME-PM1002", om: "", accion: "pendiente", fecha: "", nota: "Pendiente · Traer a Diciembre 2026?" },
+  { plan: "31343", ut: "OCTY", om: "", accion: "pendiente", fecha: "", nota: "Pendiente · Traer a Diciembre 2026?" },
+  { plan: "30180", ut: "TERC-NKTS", om: "", accion: "2027", fecha: "", nota: "OM 2025 cumplida en 2026 · Acomodar la frecuencia para 2027" },
+  { plan: "31090", ut: "TERC-NKTS-DE-ME-PM1003", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31098", ut: "TERC-NKTS-DE-ME-PM1004", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31442", ut: "TERC-NKTS-DE-ME-PM1003", om: "101209105", accion: "pendiente", fecha: "", nota: "OM 2025 Abierta · Pendiente" },
+  { plan: "31396", ut: "TERC-NKTS-AB-ME-PM1001-6000", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "31397", ut: "TERC-NKTS-AB-ME-PM1002-6000", om: "", accion: "eliminar", fecha: "", nota: "Plan Bloqueado · Eliminar del tablero" },
+  { plan: "31418", ut: "TERC-NKTS-DE-ME-PM1003", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31420", ut: "TERC-NKTS-DE-ME-PM1004", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" },
+  { plan: "31524", ut: "CCSA-04000", om: "", accion: "eliminar", fecha: "", nota: "No lanzado · Eliminar del tablero" }
+
+];
 const nf = (s) => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 /* Reglas de estatus SAP (revisión oct-2026) — iguales a las del tablero de OM
@@ -535,13 +619,29 @@ function construir(){
   const temaDe = (r) => { const t = String(pick(r, "Tema")).trim(); return t ? temaCanon.get(claveTema(t)) : "Sin tema"; };
 
   const sinActividad = new Map(), eliminados = new Set();
+  /* Relevamiento nov-2026 (solo para su año) */
+  const RV = A === RELEV_ANIO ? RELEVAMIENTO : [];
+  const nut = (u) => String(u || "").trim().toUpperCase();
+  const rvElim = new Set(RV.filter(x => x.accion === "eliminar").map(x => x.plan));
+  const rvDif = new Set(RV.filter(x => x.accion === "2027").map(x => x.plan));
+  const rvOM = new Map(RV.filter(x => x.om && (x.accion === "realizado" || x.accion === "pendiente")).map(x => [x.om, x]));
+  const rvPlan = new Map(RV.filter(x => !x.om && (x.accion === "realizado" || x.accion === "pendiente")).map(x => [x.plan, x]));
+  const rvActivos = new Set([...rvOM.values(), ...rvPlan.values()].map(x => x.plan));
+  const diferidos = new Map(), relevOM = [];
+  const relevAplicar = (o, x) => {
+    o.relev = x.nota; o.fiOrig = o.fi;
+    if (x.accion === "realizado"){ o.est = "CERRADA"; if (x.fecha) o.ff = x.fecha; if (!o.fi) o.fi = x.fecha || o.ff; }
+    else { o.est = "PENDIENTE"; o.fi = `${A}-12-01`; o.ff = `${A}-12-31`; }
+  };
   raw.planes.forEach(r => {
     const p = numPlan(pick(r, "N° Plan", "Plan")); if (!p) return;
     const obs = nf(pick(r, "Observaciones", "Observación", "Observacion"));
-    if (obs.includes("eliminar")){ eliminados.add(p); return; }          // actividad obsoleta
+    if (rvElim.has(p)){ eliminados.add(p); return; }                     // relevamiento: eliminar del tablero
+    if (rvDif.has(p)){ if (!diferidos.has(p)) diferidos.set(p, { plan: p, desc: String(pick(r, "Descripción", "Descripcion")), tema: temaDe(r), oms: 0 }); return; }
+    if (obs.includes("eliminar") && !rvActivos.has(p)){ eliminados.add(p); return; }          // actividad obsoleta
     const frec = nf(pick(r, "Frecuencia a usar", "Frecuencia", "Frecuencia SAP"));
     const prox = String(pick(r, "Próxima actividad", "Proxima actividad")).trim().slice(0, 4);
-    if (PLURI.includes(frec) && /^\d{4}$/.test(prox) && prox !== A){    // no le toca este año
+    if (PLURI.includes(frec) && /^\d{4}$/.test(prox) && prox !== A && !rvActivos.has(p)){    // no le toca este año
       if (!planes.has(p)) sinActividad.set(p, { plan: p, desc: String(pick(r, "Descripción", "Descripcion")), frec, prox, tema: temaDe(r), oms: [] });
       return;
     }
@@ -556,8 +656,9 @@ function construir(){
     }
     pl.filas++;
     pl.frecs.push(frec);
-    if (PLURI.includes(frec) && prox === A) pl.proxAnio = true;              // plurianual que vence este año
+    if (PLURI.includes(frec) && (prox === A || rvActivos.has(p))) pl.proxAnio = true;              // plurianual que vence este año
   });
+  rvElim.forEach(p => eliminados.add(p));
 
   const fuera = new Map(), correctivas = [], excluidas = [], anuladas = [], validas = [];
   raw.om.forEach(r => {
@@ -567,21 +668,50 @@ function construir(){
       plan: numPlan(pick(r, "N° Plan", "Plan")), eq: numEq(pick(r, "Equipo")),
       grupo: String(pick(r, "Grupo")), trab: parseFloat(String(pick(r, "Trabajo", "Trabajo plan", "Horas planificadas")).replace(",", ".")) || 0
     };
-    if (OM_ANULADAS.has(o.om)){ anuladas.push(o); return; }
+    const rx = rvOM.get(o.om);
+    if (OM_ANULADAS.has(o.om) && !rx){ anuladas.push(o); return; }
     o.est = clasificarEstatus(o.sap, o.fi, C.fecha);
+    if (rx){ relevAplicar(o, rx); rx.hallada = true; relevOM.push(o); }
+    else if (rvPlan.has(o.plan) && planes.has(o.plan) && o.est !== "CERRADA" &&
+             (o.fi.slice(0, 4) === A || (+o.fi.slice(0, 4) === +A - 1 && o.est !== "EXCLUIR"))){
+      relevAplicar(o, rvPlan.get(o.plan)); relevOM.push(o);              // ajuste por plan: lo no cerrado del año pasa a la acción del relevamiento
+    }
     if (o.est === "EXCLUIR"){ if (o.fi.slice(0, 4) === A) excluidas.push(o); return; }
     validas.push(o);
     if (!o.plan){ if (o.fi.slice(0, 4) === A) correctivas.push(o); return; }
     const pl = planes.get(o.plan);
     if (!pl){
       if (eliminados.has(o.plan)) return;
+      if (diferidos.has(o.plan)){ if (o.fi.slice(0, 4) === A) diferidos.get(o.plan).oms++; return; }
       const sa = sinActividad.get(o.plan);
       if (sa){ if (o.fi.slice(0, 4) === A) sa.oms.push(o); return; }
       if (o.fi.slice(0, 4) === A){ const f = fuera.get(o.plan) || { plan: o.plan, desc: o.desc, oms: [] }; f.oms.push(o); fuera.set(o.plan, f); }
       return;
     }
     pl.omsAll.push(o);
-    if (o.fi.slice(0, 4) === A) pl.oms.push(o);
+    if (o.fi.slice(0, 4) === A || o.relev) pl.oms.push(o);
+  });
+
+  /* Relevamiento: OM que reemplazan a las del mismo equipo, y llamados que faltan en la bajada */
+  const reemplazadas = [], relevSinPlan = [];
+  const sint = (pl, x, ut) => {
+    const o = { om: x.om || "s/OM", clase: "", ut: ut || pl.ut, fi: "", ff: "", desc: pl.desc, sap: "RELEVAMIENTO", plan: pl.plan, eq: "", grupo: "", trab: 0, sint: true };
+    relevAplicar(o, x); if (!o.fi) o.fi = `${A}-01-01`;
+    pl.omsAll.push(o); pl.oms.push(o); relevOM.push(o); validas.push(o);
+  };
+  rvOM.forEach(x => {
+    const pl = planes.get(x.plan);
+    if (!pl){ relevSinPlan.push(x); return; }
+    if (!x.hallada) sint(pl, x, x.ut);
+    const u = nut(x.ut);
+    const keep = (o) => o.om === x.om || !u || nut(o.ut) !== u || (o.relev && o.om !== x.om && rvOM.has(o.om));
+    pl.oms.filter(o => !keep(o)).forEach(o => reemplazadas.push(Object.assign(o, { porOM: x.om })));
+    pl.oms = pl.oms.filter(keep);
+  });
+  rvPlan.forEach(x => {
+    const pl = planes.get(x.plan);
+    if (!pl){ relevSinPlan.push(x); return; }
+    if (x.accion === "pendiente" ? !pl.oms.some(o => o.est === "PENDIENTE" && o.relev) : !pl.oms.some(o => o.est === "CERRADA")) sint(pl, x);
   });
 
   const lista = [];
@@ -633,7 +763,7 @@ function construir(){
       const pendV = vC.filter(l => !l.cumplido && !l.exced).length;
       let restan = Math.max(0, esp - cand.filter(l => l.cumplido).length - pendV);
       cand.filter(l => !l.vencido && !l.cumplido).sort((a, b) => a.fmin.localeCompare(b.fmin))
-        .forEach(l => { if (restan > 0) restan--; else { l.exced = true; l.cuenta = false; } });
+        .forEach(l => { if (restan > 0) restan--; else if (!l.oms.some(o => o.relev)) { l.exced = true; l.cuenta = false; } });   // lo confirmado por el relevamiento no es excedente
     }
 
     const cnt = llam.filter(l => l.cuenta);
@@ -684,8 +814,11 @@ function construir(){
   });
   const temas = ordenTemas(visibles), temasAll = ordenTemas(lista);
   const omExced = new Set(lista.flatMap(pl => pl.llamados.filter(l => l.exced).flatMap(l => l.oms.map(o => o.om))));
-  M = { C, planes: visibles, sinOM, temasAll, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas, validas, omExced,
-        excluidas, anuladas, temasUnificados, sinActividad: [...sinActividad.values()], eliminados: eliminados.size };
+  const fueraRelev = new Set(reemplazadas);
+  const validasT = validas.filter(o => !fueraRelev.has(o) && !rvElim.has(o.plan) && !diferidos.has(o.plan));
+  M = { C, planes: visibles, sinOM, temasAll, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas, validas: validasT, omExced,
+        excluidas, anuladas, temasUnificados, sinActividad: [...sinActividad.values()], eliminados: eliminados.size,
+        relev: { items: RV, elim: rvElim.size, difN: rvDif.size, dif: [...diferidos.values()], oms: relevOM, reemplazadas, sinPlan: relevSinPlan } };
 }
 
 function agg(pls){
@@ -904,7 +1037,7 @@ function renderMatriz(pls, f){
     if (state.abiertos.has(p.plan)){
       const oms = p.oms.slice().sort((a, b) => a.fi.localeCompare(b.fi));
       const omExc = new Set(p.llamados.filter(l => l.exced).flatMap(l => l.oms.map(o => o.om)));
-      h += `<tr class="det"><td colspan="19">${oms.length ? `<div class="om-list">${oms.map(o => `<div><span class="mono">${esc(o.om)}</span><span>${fmtF(o.fi)}</span><span class="mono" style="color:var(--text-muted)">${esc(o.eq || o.ut)}</span><span class="st chip${o.est.includes("CERRADA") ? " ok" : o.est.includes("REPROG") ? " rep" : ""}" title="SAP: ${esc(o.sap)}">${esc(o.est.toLowerCase())}${omExc.has(o.om) ? " · excedente" : ""}</span></div>`).join("")}</div>` : "Sin OM en el año."}</td></tr>`;
+      h += `<tr class="det"><td colspan="19">${oms.length ? `<div class="om-list">${oms.map(o => `<div><span class="mono">${esc(o.om)}</span><span>${fmtF(o.fi)}</span><span class="mono" style="color:var(--text-muted)">${esc(o.eq || o.ut)}</span><span class="st chip${o.est.includes("CERRADA") ? " ok" : o.est.includes("REPROG") ? " rep" : ""}" title="SAP: ${esc(o.sap)}${o.relev ? " · Relevamiento: " + esc(o.relev) : ""}">${esc(o.est.toLowerCase())}${omExc.has(o.om) ? " · excedente" : ""}${o.relev ? " · relevamiento" : ""}</span></div>`).join("")}</div>` : "Sin OM en el año."}</td></tr>`;
     }
   });
   $("mx").innerHTML = h + "</tbody></table>";
@@ -933,7 +1066,8 @@ function renderControl(){
       <div class="kpi-card k-danger"><p class="kpi-label">OM anuladas (generadas de más)</p><p class="kpi-value">${M.anuladas.length}</p><p class="kpi-sub">de ${OM_ANULADAS.size} en la lista de anulación · fuera del cálculo</p></div>
       <div class="kpi-card"><p class="kpi-label">OM excluidas (NEJE / BLOQ)</p><p class="kpi-value">${M.excluidas.length}</p><p class="kpi-sub">no ejecutadas o bloqueadas · fuera del cálculo</p></div>
       <div class="kpi-card"><p class="kpi-label">Planes plurianuales sin actividad en ${M.C.anio}</p><p class="kpi-value">${M.sinActividad.length}</p><p class="kpi-sub">según "Próxima actividad" · fuera del cálculo</p></div>
-      <div class="kpi-card"><p class="kpi-label">Planes marcados "eliminar plan"</p><p class="kpi-value">${M.eliminados}</p><p class="kpi-sub">actividades obsoletas · fuera del cálculo</p></div>
+      <div class="kpi-card"><p class="kpi-label">Planes marcados "eliminar plan"</p><p class="kpi-value">${M.eliminados}</p><p class="kpi-sub">obsoletos o eliminados por el relevamiento (${M.relev.elim}) · fuera del cálculo</p></div>
+      <div class="kpi-card"><p class="kpi-label">Planes con frecuencia a acomodar en 2027</p><p class="kpi-value">${M.relev.difN}</p><p class="kpi-sub">relevamiento nov-2026 · fuera de ${M.C.anio}</p></div>
       <div class="kpi-card k-warning"><p class="kpi-label">OM de planes que no tocan este año</p><p class="kpi-value">${M.sinActividad.reduce((s, x) => s + x.oms.length, 0)}</p><p class="kpi-sub">revisar fecha de próxima actividad o la OM</p></div>
     </section>
     <div class="panel"><h3>Planes a revisar</h3><p class="panel-sub">Si la frecuencia está mal cargada, corregila en la hoja Planes · ${M.planes.reduce((s, p) => s + p.exced, 0)} llamados abiertos quedaron como excedentes sobre la frecuencia y no cuentan como pendientes</p>
@@ -944,6 +1078,19 @@ function renderControl(){
       <div class="tbl-wrap"><table class="simple"><thead><tr><th>N° Plan</th><th>Tema</th><th>Actividad</th><th>Frecuencia</th><th>Próxima actividad</th><th>OM</th></tr></thead><tbody>` +
       M.sinActividad.filter(x => x.oms.length).map(x => `<tr><td class="mono">${esc(x.plan)}</td><td>${esc(x.tema)}</td><td>${esc(x.desc)}</td><td>${esc(x.frec)}</td><td class="num">${esc(x.prox)}</td><td>${x.oms.map(o => `<span class="mono">${esc(o.om)}</span> <span class="chip" title="SAP: ${esc(o.sap)}">${esc(o.est.toLowerCase())}</span>`).join("<br>")}</td></tr>`).join("") +
       `</tbody></table></div></div>` : ""}
+    ${M.relev.items.length ? (() => {
+      const R = M.relev, TXT = { eliminar: "Eliminado del tablero", "2027": "Frecuencia a acomodar en 2027", realizado: "Realizado", pendiente: "Pendiente diciembre", revisar: "Acción en SAP (sin cambio en el cálculo)" };
+      const omsDe = (x) => R.oms.filter(o => o.plan === x.plan && (x.om ? o.om === x.om || (o.sint && o.ut === x.ut) : !R.items.some(y => y.om && y.om === o.om)));
+      const estado = (x) => {
+        if (x.accion === "eliminar" || x.accion === "2027" || x.accion === "revisar") return "";
+        if (R.sinPlan.includes(x)) return `<span class="chip late">plan no está en la hoja Planes</span>`;
+        const os = omsDe(x);
+        return os.map(o => `<span class="mono">${esc(o.om)}</span> <span class="chip${o.est === "CERRADA" ? " ok" : ""}">${o.sint ? "agregada" : "ajustada"} · ${esc(o.est.toLowerCase())}</span>`).join("<br>");
+      };
+      return `<div class="panel"><h3>Relevamiento de planes (nov-2026)</h3><p class="panel-sub">Ajustes confirmados que prevalecen sobre la bajada de SAP en ${RELEV_ANIO}. "Pendiente" se programa en diciembre. ${R.reemplazadas.length} OM del mismo equipo quedaron reemplazadas por la OM indicada en el relevamiento.</p>
+      <div class="tbl-wrap"><table class="simple"><thead><tr><th>N° Plan</th><th>Ubicación técnica</th><th>Acción</th><th>Observación</th><th>OM en el tablero</th></tr></thead><tbody>` +
+      R.items.map(x => `<tr><td class="mono">${esc(x.plan)}</td><td class="mono">${esc(x.ut)}</td><td>${esc(TXT[x.accion])}</td><td>${esc(x.nota)}</td><td>${estado(x)}</td></tr>`).join("") +
+      `</tbody></table></div></div>`; })() : ""}
     ${M.temasUnificados.length ? `<div class="panel"><h3>Temas unificados</h3><p class="panel-sub">Variantes de escritura en la columna Tema que se agruparon como un solo tema. Conviene unificarlas también en la hoja.</p>
       <div class="tbl-wrap"><table class="simple"><thead><tr><th>Tema que se muestra</th><th>Variantes en la hoja (filas)</th></tr></thead><tbody>` +
       M.temasUnificados.map(x => `<tr><td>${esc(x.tema)}</td><td>${x.variantes.map(esc).join(" · ")}</td></tr>`).join("") +
@@ -1154,6 +1301,12 @@ const mesDe = (f) => +f.slice(5, 7) - 1;
    - Reprogramado: R en el mes original y ↻ en el mes de la Fecha Fin (nueva fecha). Si pasa al año siguiente se indica al final.
    - Vencido sin cerrar: ✕ · Por vencer: • · Excedente sobre la frecuencia: – (no cuenta). */
 function marcasLlamado(l){
+  const rv = [...new Set(l.oms.map(o => o.relev).filter(Boolean))];
+  const ms = marcasLlamado0(l);
+  if (rv.length) ms.forEach(m => { m.tit += ` · Relevamiento nov-2026: ${rv.join(" / ")}`; m.rv = true; });
+  return ms;
+}
+function marcasLlamado0(l){
   const A = String(M.C.anio);
   const oms = l.oms.map(o => o.om).join(", ");
   const base = `${MS[l.mes]} · OM ${oms}`;
@@ -1164,7 +1317,7 @@ function marcasLlamado(l){
     if (f.slice(0, 4) === A && mesDe(f) > l.mes)
       return [{ mes: l.mes, t: "mov", tit: `Programado en ${MS[l.mes]} · cumplido el ${fmtF(f)} (OM ${o.om})` },
               { mes: mesDe(f), t: "ok", tit: `Cumplido el ${fmtF(f)} · programado en ${MS[l.mes]} (OM ${o.om})` }];
-    return [{ mes: l.mes, t: "ok", tit: `Cumplido${f ? " el " + fmtF(f) : ""} (OM ${o.om})` }];
+    return [{ mes: l.mes, t: "ok", tit: `Cumplido${f ? " el " + fmtF(f) + (f.slice(0, 4) !== A ? "/" + f.slice(2, 4) : "") : ""} (OM ${o.om})` }];
   }
   if (l.reprog){
     const f = l.oms.filter(x => x.est.includes("REPROG")).map(x => x.ff).filter(Boolean).sort().pop() || "";
@@ -1202,7 +1355,8 @@ function celdaAnual(ms){
   const top = MK_PRI.find(t => ms.some(m => m.t === t));
   const n = ms.filter(m => m.t === top).length;
   const venc = top === "rep" && ms.some(m => m.t === "rep" && m.venc);
-  return `<span class="mk ${top}" title="${esc(ms.map(m => m.tit).join("\n"))}">${MK_TXT[top]}${venc ? "!" : ""}${n > 1 ? `<sup>${n}</sup>` : ""}</span>`;
+  const rv = ms.some(m => m.rv);
+  return `<span class="mk ${top}" title="${esc(ms.map(m => m.tit).join("\n"))}">${MK_TXT[top]}${venc ? "!" : ""}${n > 1 ? `<sup>${n}</sup>` : ""}${rv ? `<sup>*</sup>` : ""}</span>`;
 }
 
 function renderAnual(){
@@ -1275,6 +1429,7 @@ function renderAnual(){
         <span><i class="mk bad">✕</i>Vencido sin cerrar</span>
         <span><i class="mk fut">•</i>Pendiente del mes en curso / por vencer</span>
         <span><i class="mk exc">–</i>Excedente (no cuenta)</span>
+        <span><i class="mk ok">✓<sup>*</sup></i>Ajustado por el relevamiento de planes nov-2026</span>
       </div>
       <div class="plan-wrap" id="yr"></div>
     </div>`;
