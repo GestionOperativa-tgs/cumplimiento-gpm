@@ -314,7 +314,16 @@ const AGRUPACIONES = [
   { nombre: "Potenciales Eléctricos",              temas: ["Potenciales eléctricos"] }
 ];
 const AGR_OTROS = "Otros temas";
-const GRUPOS_PLAN = { CTY: "Planta Tratayén", CSA: "Planta Salliqueló", GPM: "Gasoducto PM", GNK: "GNK", IDM: "Ing. de Mtto", SIO: "GSAC", TTM: "Taller de Turbinas" };
+/* SECTORES — responsable de planes y OM según la ubicación técnica (no el grupo de planificación).
+   GNK y GPM son el mismo gasoducto en SAP: GNK son planes más antiguos y GPM planes más nuevos. */
+const SECTORES = [
+  { prefijo: "OCTY", nombre: "Planta Tratayén" },
+  { prefijo: "CCSA", nombre: "Planta Salliqueló" },
+  { prefijo: "TERC", nombre: "Gasoducto GPM" }
+];
+const SECTOR_OTRO = "Otra ubicación";
+const sectorDe = (ut) => { const u = String(ut || "").trim().toUpperCase(); const x = SECTORES.find(s => u.startsWith(s.prefijo)); return x ? x.nombre : SECTOR_OTRO; };
+const SECTOR_ORDEN = SECTORES.map(s => s.nombre).concat(SECTOR_OTRO);
 
 /* =========================================================
    BACKLOG — dotación y tiempos por zona (guía nov-2026)
@@ -536,7 +545,7 @@ function construir(){
       const clase = String(pick(r, "Clase Plan", "CL OM", "Clase")).trim().toUpperCase();
       const tema = temaDe(r);
       pl = { plan: p, desc: String(pick(r, "Descripción", "Descripcion")), clase, tipo: PREDICTIVAS.includes(clase) ? "Predictivo" : "Preventivo",
-             tema, filas: 0, frecs: [], proxAnio: false, omsAll: [], oms: [] };
+             tema, ut: String(pick(r, "Ubicación técnica", "Ubicacion tecnica")).trim(), filas: 0, frecs: [], proxAnio: false, omsAll: [], oms: [] };
       planes.set(p, pl);
       sinActividad.delete(p);
     }
@@ -646,6 +655,7 @@ function construir(){
     else if (faltan > 0) caso = "Faltan llamados a la fecha";
     else if (!llam.some(l => l.vencido)) caso = "Solo llamados futuros";
     else caso = "Normal";
+    pl.sector = pl.ut ? sectorDe(pl.ut) : sectorDe((pl.oms[0] || pl.omsAll[0] || {}).ut);
     Object.assign(pl, {
       llamados: llam, nLlam: llam.length, esp, espF, faltan, horas, caso, meses,
       venc: cumN + pendN, cum: cumN, cumReal: cum.length, pend: pendN, fut: fut.length, tope,
@@ -778,8 +788,8 @@ function tablaPend(lista, conTema){
 }
 function csvPend(lista){
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-  const rows = [["Tema","N° Plan","Tipo","Actividad","Equipo/Ubicación","Fecha inicio","OM","Estatus","Días de atraso"]]
-    .concat(lista.map(x => [x.p.tema, x.p.plan, x.p.tipo, x.l.desc, x.l.eqTxt, x.l.fmin, x.l.oms.map(o => o.om).join(" "), x.l.oms.map(o => o.est + " (" + o.sap + ")").join(" / "), x.atraso]));
+  const rows = [["Sector","Tema","N° Plan","Tipo","Actividad","Equipo/Ubicación","Fecha inicio","OM","Estatus","Días de atraso"]]
+    .concat(lista.map(x => [x.p.sector, x.p.tema, x.p.plan, x.p.tipo, x.l.desc, x.l.eqTxt, x.l.fmin, x.l.oms.map(o => o.om).join(" "), x.l.oms.map(o => o.est + " (" + o.sap + ")").join(" / "), x.atraso]));
   const blob = new Blob(["\ufeff" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
   a.download = `GPM_llamados_pendientes_${M.C.fecha}.csv`; document.body.appendChild(a); a.click(); a.remove();
@@ -802,6 +812,8 @@ function renderResumen(){
       <div class="panel"><h3>Llamados por mes</h3><p class="panel-sub">Un llamado es un plan + equipo + mes. Se cumple con al menos una OM cerrada.</p>
         <div class="chart-box" style="height:${Math.max(300, M.temas.length * 46)}px"><canvas id="chR"></canvas></div></div>
     </div>
+    <div class="panel"><h3>Cumplimiento por sector</h3><p class="panel-sub">Sector responsable según la ubicación técnica del plan: OCTY = Planta Tratayén · CCSA = Planta Salliqueló · TERC = Gasoducto GPM</p>
+      <div class="tema-list">${SECTOR_ORDEN.filter(x => M.planes.some(p => p.sector === x)).map(x => filaAgg(x, "", agg(M.planes.filter(p => p.sector === x)), false)).join("")}</div></div>
     <div class="panel"><h3>Cumplimiento por agrupación</h3><p class="panel-sub">Tocá una agrupación para ver su despliegue anual</p>
       <div class="tema-list" id="agrList">${agrupacionesActivas().map(g => filaAgg(g, g === AGR_OTROS ? "" : AGRUPACIONES.find(x => x.nombre === g).temas.join(" · "), agg(M.planes.filter(p => agrupacionDe(p.tema) === g)), true)).join("")}</div></div>
     <div class="panel"><div class="panel-head"><div><h3>Llamados vencidos pendientes</h3><p class="panel-sub">Del más atrasado al más reciente, con sus OM y estatus</p></div>
@@ -1162,13 +1174,13 @@ function filasAnuales(pls){
   pls.forEach(p => {
     const porItem = new Map();
     p.llamados.forEach(l => { const r = porItem.get(l.item) || []; r.push(l); porItem.set(l.item, r); });
-    if (!porItem.size){ filas.push({ p, item: "", desc: p.desc, eq: "", gp: "", ll: [], meses: Array.from({ length: 12 }, () => []), venc: 0, cum: 0, sig: "" }); return; }
+    if (!porItem.size){ filas.push({ p, item: "", desc: p.desc, eq: "", gp: p.sector, ll: [], meses: Array.from({ length: 12 }, () => []), venc: 0, cum: 0, sig: "" }); return; }
     porItem.forEach((ll, item) => {
       const meses = Array.from({ length: 12 }, () => []);
       let sig = "";
       ll.forEach(l => marcasLlamado(l).forEach(m => { meses[m.mes].push(m); if (m.sig) sig = m.sig; }));
       const c = ll.filter(l => l.cuenta && l.vencido);
-      const gp = [...new Set(ll.flatMap(l => l.oms.map(o => o.grupo)).filter(Boolean))].join(" / ");
+      const gp = [...new Set(ll.flatMap(l => l.oms.map(o => sectorDe(o.ut))))].join(" / ") || p.sector;
       filas.push({ p, item, desc: ll[0].desc || p.desc, eq: ll[0].eqTxt, gp, ll, meses, venc: c.length, cum: c.filter(l => l.cumplido).length, sig });
     });
   });
@@ -1186,8 +1198,11 @@ function renderAnual(){
   const grupos = agrupacionesActivas();
   if (!state.agr || !grupos.includes(state.agr)) state.agr = grupos[0];
   const fa = state.anual || (state.anual = {});
-  const f = fa[state.agr] || (fa[state.agr] = { tema: "", q: "", gp: "", est: "" });
-  const plsG = M.planes.filter(p => agrupacionDe(p.tema) === state.agr);
+  const f = fa[state.agr] || (fa[state.agr] = { tema: "", q: "", est: "" });
+  const plsA = M.planes.filter(p => agrupacionDe(p.tema) === state.agr);
+  const secs = SECTOR_ORDEN.filter(x => plsA.some(p => p.sector === x));
+  if (state.sec && !secs.includes(state.sec)) state.sec = "";
+  const plsG = state.sec ? plsA.filter(p => p.sector === state.sec) : plsA;
   const temas = M.temas.filter(t => plsG.some(p => p.tema === t));
   if (f.tema && !temas.includes(f.tema)) f.tema = "";
   const pls = f.tema ? plsG.filter(p => p.tema === f.tema) : plsG;
@@ -1206,13 +1221,16 @@ function renderAnual(){
     <div class="panel">
       <div class="panel-head"><div><h3>Despliegue anual</h3><p class="panel-sub">Una fila por plan y equipo. Pasá el mouse por una marca para ver la OM y las fechas.</p></div>
         <button class="btn" id="csvAnual">Descargar CSV</button></div>
+      <div class="chip-row" role="group" aria-label="Sectores">
+        <button class="chip-btn sec${!state.sec ? " active" : ""}" data-s="">Todos los sectores</button>
+        ${secs.map(x => { const y = agg(plsA.filter(p => p.sector === x)); return `<button class="chip-btn sec${state.sec === x ? " active" : ""}" data-s="${esc(x)}">${esc(x)}<span class="pct ${nivel(y.pct)}">${pctTxt(y.pct)}</span></button>`; }).join("")}
+      </div>
       <div class="chip-row" role="group" aria-label="Temas">
         <button class="chip-btn${!f.tema ? " active" : ""}" data-t="">Todos los temas</button>
         ${temas.map(t => { const x = agg(plsG.filter(p => p.tema === t)); return `<button class="chip-btn${f.tema === t ? " active" : ""}" data-t="${esc(t)}">${esc(t)}<span class="pct ${nivel(x.pct)}">${pctTxt(x.pct)}</span></button>`; }).join("")}
       </div>
       <div class="filters">
         <input type="search" id="aQ" placeholder="Buscar plan, actividad o equipo" value="${esc(f.q)}" aria-label="Buscar">
-        <select id="aGp" aria-label="Grupo de planificación"><option value="">Todos los grupos de planificación</option></select>
         <select id="aEst" aria-label="Estado">
           <option value="">Todas las filas</option>
           <option value="pend"${f.est === "pend" ? " selected" : ""}>Con vencidos sin cerrar</option>
@@ -1234,14 +1252,12 @@ function renderAnual(){
     </div>`;
 
   const filas = filasAnuales(pls);
-  const gps = [...new Set(filas.flatMap(r => r.gp.split(" / ")).filter(Boolean))].sort();
-  if (f.gp && !gps.includes(f.gp)) f.gp = "";
-  $("aGp").innerHTML += gps.map(g => `<option value="${esc(g)}"${g === f.gp ? " selected" : ""}>${esc(g)}${GRUPOS_PLAN[g] ? " · " + esc(GRUPOS_PLAN[g]) : ""}</option>`).join("");
 
   $("view").querySelectorAll(".agr-btn").forEach(b => b.addEventListener("click", () => { state.agr = b.dataset.g; saveCfg({ agr: state.agr }); renderAnual(); }));
-  $("view").querySelectorAll(".chip-btn").forEach(b => b.addEventListener("click", () => { f.tema = b.dataset.t; renderAnual(); }));
-  const upd = () => { f.q = $("aQ").value; f.gp = $("aGp").value; f.est = $("aEst").value; tablaAnual(filas, f); };
-  $("aQ").addEventListener("input", upd); $("aGp").addEventListener("change", upd); $("aEst").addEventListener("change", upd);
+  $("view").querySelectorAll(".chip-btn[data-t]").forEach(b => b.addEventListener("click", () => { f.tema = b.dataset.t; renderAnual(); }));
+  $("view").querySelectorAll(".chip-btn[data-s]").forEach(b => b.addEventListener("click", () => { state.sec = b.dataset.s; saveCfg({ sec: state.sec }); renderAnual(); }));
+  const upd = () => { f.q = $("aQ").value; f.est = $("aEst").value; tablaAnual(filas, f); };
+  $("aQ").addEventListener("input", upd); $("aEst").addEventListener("change", upd);
   $("csvAnual").addEventListener("click", () => csvAnual(filtrarAnual(filas, f)));
   tablaAnual(filas, f);
 }
@@ -1250,14 +1266,13 @@ function filtrarAnual(filas, f){
   const tiene = (r, t) => r.meses.some(ms => ms.some(m => m.t === t));
   return filas.filter(r =>
     (!q || nf(`${r.p.plan} ${r.desc} ${r.p.desc} ${r.eq}`).includes(q)) &&
-    (!f.gp || r.gp.split(" / ").includes(f.gp)) &&
     (!f.est || (f.est === "pend" ? tiene(r, "bad") : f.est === "rep" ? tiene(r, "rep") : !tiene(r, "bad") && !tiene(r, "rep") && r.ll.length)));
 }
 function tablaAnual(filas, f){
   const lista = filtrarAnual(filas, f);
   $("aCount").textContent = `${lista.length} de ${filas.length} filas`;
   const cm = M.C.mes, cols = 17;
-  let h = `<table class="yr"><thead><tr><th class="l info">Actividad · equipo</th><th>Gr. Pl.</th><th>Frecuencia</th>` +
+  let h = `<table class="yr"><thead><tr><th class="l info">Actividad · equipo</th><th class="l">Sector</th><th>Frecuencia</th>` +
     MS.map((m, i) => `<th class="mo${i === cm ? " curm" : ""}">${m}</th>`).join("") + `<th>% a la fecha</th><th class="l">Pasa a ${M.C.anio + 1}</th></tr></thead><tbody>`;
   if (!lista.length) h += `<tr><td colspan="${cols}"><div class="empty">Ninguna fila coincide con los filtros.</div></td></tr>`;
   let temaAct = null;
@@ -1271,7 +1286,7 @@ function tablaAnual(filas, f){
       const pct = r.venc ? r.cum / r.venc : null;
       h += `<tr><td class="info"><div class="act">${esc(r.desc)}</div>
           <div class="act-meta"><span class="mono">${esc(r.p.plan)}</span>${r.eq ? ` · <span class="mono">${esc(r.eq)}</span>` : ""} · ${esc(r.p.tipo)}${r.ll.length ? "" : ` · <span class="caso warn">${esc(r.p.caso)}</span>`}</div></td>
-        <td class="mono" style="font-size:11px">${esc(r.gp || "—")}</td><td style="font-size:11.5px">${esc(r.p.frecTxt)}</td>` +
+        <td class="l" style="font-size:11px;white-space:nowrap">${esc(r.gp || "—")}</td><td style="font-size:11.5px">${esc(r.p.frecTxt)}</td>` +
         r.meses.map((ms, i) => `<td class="mo${i === cm ? " curm" : ""}">${celdaAnual(ms)}</td>`).join("") +
         `<td style="font-weight:600;color:${color(pct)}">${pctTxt(pct)}</td><td class="l">${r.sig ? `<span class="nxt">↻ ${fmtF(r.sig)}/${r.sig.slice(2, 4)}</span>` : ""}</td></tr>`;
     });
@@ -1280,7 +1295,7 @@ function tablaAnual(filas, f){
 function csvAnual(filas){
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const NOM = { ok: "Cumplido", bad: "Vencido sin cerrar", rep: "Reprogramado", orig: "Programado (reprogramado)", mov: "Programado (cumplido después)", fut: "Por vencer", exc: "Excedente" };
-  const rows = [["Agrupación", "Tema", "N° Plan", "Actividad", "Equipo/Ubicación", "Grupo planif.", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
+  const rows = [["Agrupación", "Tema", "N° Plan", "Actividad", "Equipo/Ubicación", "Sector", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
     .concat(filas.map(r => [state.agr, r.p.tema, r.p.plan, r.desc, r.eq, r.gp, r.p.frecTxt]
       .concat(r.meses.map(ms => ms.map(m => NOM[m.t]).join(" + ")), [r.venc, r.cum, r.sig])));
   const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -1349,6 +1364,7 @@ async function cargar(){
   if (cfg.vista) state.vista = cfg.vista;
   if (cfg.bkBase) state.bkBase = cfg.bkBase;
   if (cfg.agr) state.agr = cfg.agr;
+  if (cfg.sec) state.sec = cfg.sec;
   state.excl = !!cfg.excl; $("exclAnom").checked = state.excl;
   $("exclAnom").addEventListener("change", e => { state.excl = e.target.checked; saveCfg({ excl: state.excl }); render(); });
   llenarCorte();
