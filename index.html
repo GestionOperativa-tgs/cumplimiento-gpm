@@ -202,6 +202,43 @@
   .kpi-trio{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:2px 0 2px;}
   .kpi-trio .n{display:block;font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;}
   .kpi-trio .t{display:block;font-size:11px;color:var(--text-muted);}
+
+  /* ---- Vista anual por agrupación ---- */
+  .agr-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:14px;}
+  .agr-btn{appearance:none;font-family:inherit;text-align:left;cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:9px 12px;box-shadow:var(--shadow);border-left:4px solid var(--border-strong);display:flex;flex-direction:column;gap:2px;}
+  .agr-btn:hover{border-color:var(--border-strong);}
+  .agr-btn.active{background:var(--accent-soft);border-color:var(--accent);border-left-color:var(--accent);}
+  .agr-btn .an{font-size:12.5px;font-weight:600;color:var(--text);line-height:1.25;}
+  .agr-btn .ap{font-size:18px;font-weight:700;line-height:1.1;}
+  .agr-btn .am{font-size:11px;color:var(--text-faint);}
+  .agr-btn:focus-visible,.chip-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .chip-btn{appearance:none;font-family:inherit;cursor:pointer;font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface-alt);color:var(--text-muted);display:inline-flex;gap:6px;align-items:center;}
+  .chip-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+  .chip-btn.active .pct{background:rgba(255,255,255,.22);color:#fff;}
+  table.yr{border-collapse:separate;border-spacing:0;font-size:12px;width:100%;}
+  table.yr th,table.yr td{background:var(--surface);}
+  table.yr thead th{position:sticky;top:0;z-index:2;background:var(--surface-alt);font-size:11px;font-weight:600;color:var(--text-muted);padding:7px 6px;border-bottom:1px solid var(--border-strong);white-space:nowrap;}
+  table.yr th.l,table.yr td.l{text-align:left;}
+  table.yr td{padding:4px 6px;border-bottom:1px solid var(--border);vertical-align:middle;text-align:center;}
+  table.yr td.info{text-align:left;min-width:280px;max-width:380px;position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--border-strong);}
+  table.yr thead th.info{position:sticky;left:0;z-index:3;}
+  table.yr th.mo,table.yr td.mo{width:46px;min-width:46px;padding:3px 2px;border-left:1px dotted var(--border);}
+  table.yr td.mo.curm,table.yr th.mo.curm{background:var(--accent-soft);}
+  table.yr tr.grp td{background:var(--surface-alt);font-weight:600;font-size:12px;color:var(--accent-strong);text-align:left;padding:7px 10px;border-bottom:1px solid var(--border-strong);}
+  table.yr tr.grp td .caso{font-weight:400;margin-left:8px;}
+  .mk{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 3px;border-radius:4px;font-size:12px;font-weight:700;line-height:1;cursor:default;}
+  .mk.ok{background:var(--success-mid);color:#fff;}
+  .mk.bad{background:var(--danger-mid);color:#fff;}
+  .mk.rep{background:var(--warning-mid);color:#fff;}
+  .mk.orig{box-shadow:inset 0 0 0 1.5px var(--warning-mid);color:var(--warning);}
+  .mk.mov{box-shadow:inset 0 0 0 1.5px var(--success-mid);color:var(--success);}
+  .mk.fut{box-shadow:inset 0 0 0 1.5px var(--accent);color:var(--accent-strong);}
+  .mk.exc{background:#E3E7EC;color:#5B6474;}
+  .mk sup{font-size:9px;margin-left:1px;}
+  .nxt{font-size:10.5px;color:var(--warning);font-weight:600;white-space:nowrap;}
+  @media (max-width:980px){.agr-bar{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media (max-width:560px){.agr-bar{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -259,6 +296,25 @@ const TEMAS = {
   "PC SQL":       { grupo: "Plantas compresoras", desc: "Planta Compresora Salliqueló" }
 };
 const PREDICTIVAS = ["PM13", "PM14"];
+
+/* =========================================================
+   AGRUPACIONES — vista anual (nov-2026)
+   Agrupan los temas de la columna Tema de la hoja de planes.
+   Se comparan sin distinguir mayúsculas, acentos ni espacios.
+   Un tema que no figure en ninguna agrupación aparece en "Otros temas".
+   ========================================================= */
+const AGRUPACIONES = [
+  { nombre: "Mantenimiento de Válvulas",          temas: ["PSV", "Mtto de Válvulas", "Mtto de Válvulas Reguladoras"] },
+  { nombre: "Actividades en EMED / PM",            temas: ["Calibración PM", "Inspección EMED y PM"] },
+  { nombre: "Mantenimiento por sistemas",          temas: ["Mtto Eléctrico", "Mtto Sist Neumático", "Mtto de Actuadores", "Mtto Sistema de control", "Filtros de Planta"] },
+  { nombre: "Inspección Gasoducto",                temas: ["Inspección de gasoducto", "Inspección de cruces", "Medición de fugas"] },
+  { nombre: "Calibración de Instrumentos",         temas: ["Calibración de Instrumentos", "Calibración Variables"] },
+  { nombre: "Mantenimiento de equipos principales", temas: ["Mtto TC Solar", "Mtto Motogeneradores", "Mtto TEG", "Mtto SRP", "Mtto Calentadores"] },
+  { nombre: "Mantenimiento Eléctrico",             temas: ["Mtto Bancos de Batería", "PAT"] },
+  { nombre: "Potenciales Eléctricos",              temas: ["Potenciales eléctricos"] }
+];
+const AGR_OTROS = "Otros temas";
+const GRUPOS_PLAN = { CTY: "Planta Tratayén", CSA: "Planta Salliqueló", GPM: "Gasoducto PM", GNK: "GNK", IDM: "Ing. de Mtto", SIO: "GSAC", TTM: "Taller de Turbinas" };
 
 /* =========================================================
    BACKLOG — dotación y tiempos por zona (guía nov-2026)
@@ -493,7 +549,7 @@ function construir(){
   raw.om.forEach(r => {
     const o = {
       om: numEq(pick(r, "N° OM", "OM")), clase: String(pick(r, "Clase OM")), ut: String(pick(r, "Ubicación Técnica", "Ubicacion Tecnica")),
-      fi: fecha(pick(r, "Fecha Inicio")), desc: String(pick(r, "Descripción", "Descripcion")), sap: String(pick(r, "Estatus")).trim().toUpperCase(),
+      fi: fecha(pick(r, "Fecha Inicio")), ff: fecha(pick(r, "Fecha Fin")), desc: String(pick(r, "Descripción", "Descripcion")), sap: String(pick(r, "Estatus")).trim().toUpperCase(),
       plan: numPlan(pick(r, "N° Plan", "Plan")), eq: numEq(pick(r, "Equipo")),
       grupo: String(pick(r, "Grupo")), trab: parseFloat(String(pick(r, "Trabajo", "Trabajo plan", "Horas planificadas")).replace(",", ".")) || 0
     };
@@ -641,7 +697,7 @@ function renderTabs(){
   const grupos = {};
   M.temas.forEach(t => (grupos[M.grupoDe(t)] = grupos[M.grupoDe(t)] || []).push(t));
   const mk = (n, pct) => `<button class="tab${state.vista === n ? " active" : ""}" data-v="${esc(n)}">${esc(n)}${pct !== undefined ? `<span class="pct ${nivel(pct)}">${pctTxt(pct)}</span>` : ""}</button>`;
-  let h = `<div class="tab-group">${mk("Resumen")}${mk("Backlog")}</div>`;
+  let h = `<div class="tab-group">${mk("Resumen")}${mk("Vista anual")}${mk("Backlog")}</div>`;
   GRUPOS.concat(Object.keys(grupos).filter(g => !GRUPOS.includes(g))).forEach(g => {
     if (!grupos[g]) return;
     h += `<div class="tab-group"><span class="tab-group-label">${esc(g)}</span>${grupos[g].map(t => mk(t, agg(M.planes.filter(p => p.tema === t)).pct)).join("")}</div>`;
@@ -746,11 +802,14 @@ function renderResumen(){
       <div class="panel"><h3>Llamados por mes</h3><p class="panel-sub">Un llamado es un plan + equipo + mes. Se cumple con al menos una OM cerrada.</p>
         <div class="chart-box" style="height:${Math.max(300, M.temas.length * 46)}px"><canvas id="chR"></canvas></div></div>
     </div>
+    <div class="panel"><h3>Cumplimiento por agrupación</h3><p class="panel-sub">Tocá una agrupación para ver su despliegue anual</p>
+      <div class="tema-list" id="agrList">${agrupacionesActivas().map(g => filaAgg(g, g === AGR_OTROS ? "" : AGRUPACIONES.find(x => x.nombre === g).temas.join(" · "), agg(M.planes.filter(p => agrupacionDe(p.tema) === g)), true)).join("")}</div></div>
     <div class="panel"><div class="panel-head"><div><h3>Llamados vencidos pendientes</h3><p class="panel-sub">Del más atrasado al más reciente, con sus OM y estatus</p></div>
       ${pend.length ? `<button class="btn" id="csvBtn">Descargar CSV</button>` : ""}</div>${tablaPend(pend, true)}</div>`;
   $("view").querySelectorAll(".tema-row[data-v]").forEach(el => {
-    el.addEventListener("click", () => irA(el.dataset.v));
-    el.addEventListener("keydown", e => { if (e.key === "Enter") irA(el.dataset.v); });
+    const ir = () => { if (el.closest("#agrList")){ state.agr = el.dataset.v; saveCfg({ agr: state.agr }); irA("Vista anual"); } else irA(el.dataset.v); };
+    el.addEventListener("click", ir);
+    el.addEventListener("keydown", e => { if (e.key === "Enter") ir(); });
   });
   if ($("csvBtn")) $("csvBtn").addEventListener("click", () => csvPend(pend));
   chartMes("chR", a);
@@ -1054,14 +1113,190 @@ function renderBacklog(){
   }
 }
 
+/* ---------- Vista anual por agrupación ---------- */
+const kTema = (t) => nf(t).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean)
+  .map(w => w.length > 4 && w.endsWith("es") ? w.slice(0, -2) : w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w).join(" ");
+const AGR_IDX = new Map();
+AGRUPACIONES.forEach(g => g.temas.forEach(t => AGR_IDX.set(kTema(t), g.nombre)));
+const agrupacionDe = (tema) => AGR_IDX.get(kTema(tema)) || AGR_OTROS;
+function agrupacionesActivas(){
+  const usadas = new Set(M.planes.map(p => agrupacionDe(p.tema)));
+  return AGRUPACIONES.map(g => g.nombre).concat(usadas.has(AGR_OTROS) ? [AGR_OTROS] : []);
+}
+const MK_TXT = { ok: "✓", bad: "✕", rep: "↻", orig: "R", mov: "›", fut: "•", exc: "–" };
+const MK_PRI = ["bad", "rep", "ok", "fut", "orig", "mov", "exc"];
+const mesDe = (f) => +f.slice(5, 7) - 1;
+
+/* Marcas de un llamado en el año:
+   - Cerrado: ✓ en el mes de la Fecha Fin de la OM cerrada; si cerró después del mes programado, › en el mes original.
+   - Reprogramado: R en el mes original y ↻ en el mes de la Fecha Fin (nueva fecha). Si pasa al año siguiente se indica al final.
+   - Vencido sin cerrar: ✕ · Por vencer: • · Excedente sobre la frecuencia: – (no cuenta). */
+function marcasLlamado(l){
+  const A = String(M.C.anio);
+  const oms = l.oms.map(o => o.om).join(", ");
+  const base = `${MS[l.mes]} · OM ${oms}`;
+  if (l.exced) return [{ mes: l.mes, t: "exc", tit: `${base} · excedente sobre la frecuencia (no cuenta)` }];
+  if (l.cumplido){
+    const o = l.oms.filter(x => x.est.includes("CERRADA")).sort((a, b) => (a.ff || a.fi).localeCompare(b.ff || b.fi))[0];
+    const f = o.ff && o.ff >= o.fi ? o.ff : o.fi;
+    if (f.slice(0, 4) === A && mesDe(f) > l.mes)
+      return [{ mes: l.mes, t: "mov", tit: `Programado en ${MS[l.mes]} · cumplido el ${fmtF(f)} (OM ${o.om})` },
+              { mes: mesDe(f), t: "ok", tit: `Cumplido el ${fmtF(f)} · programado en ${MS[l.mes]} (OM ${o.om})` }];
+    return [{ mes: l.mes, t: "ok", tit: `Cumplido${f ? " el " + fmtF(f) : ""} (OM ${o.om})` }];
+  }
+  if (l.reprog){
+    const f = l.oms.filter(x => x.est.includes("REPROG")).map(x => x.ff).filter(Boolean).sort().pop() || "";
+    const vencida = f && f < M.C.fecha;
+    const tit = (d) => `Programado en ${MS[l.mes]} · reprogramado ${d} (OM ${oms})${vencida ? " · la nueva fecha ya pasó" : ""}`;
+    if (f && f.slice(0, 4) === A && mesDe(f) > l.mes)
+      return [{ mes: l.mes, t: "orig", tit: tit(`al ${fmtF(f)}`) }, { mes: mesDe(f), t: "rep", tit: tit(`al ${fmtF(f)}`), venc: vencida }];
+    if (f && f.slice(0, 4) > A) return [{ mes: l.mes, t: "rep", tit: tit(`al ${fmtF(f)}/${f.slice(2, 4)}`), sig: f }];
+    return [{ mes: l.mes, t: "rep", tit: tit("sin nueva fecha"), venc: true }];
+  }
+  if (l.vencido) return [{ mes: l.mes, t: "bad", tit: `${base} · vencido sin cerrar (programado ${fmtF(l.fmin)})` }];
+  return [{ mes: l.mes, t: "fut", tit: `${base} · por vencer (programado ${fmtF(l.fmin)})` }];
+}
+
+function filasAnuales(pls){
+  const filas = [];
+  pls.forEach(p => {
+    const porItem = new Map();
+    p.llamados.forEach(l => { const r = porItem.get(l.item) || []; r.push(l); porItem.set(l.item, r); });
+    if (!porItem.size){ filas.push({ p, item: "", desc: p.desc, eq: "", gp: "", ll: [], meses: Array.from({ length: 12 }, () => []), venc: 0, cum: 0, sig: "" }); return; }
+    porItem.forEach((ll, item) => {
+      const meses = Array.from({ length: 12 }, () => []);
+      let sig = "";
+      ll.forEach(l => marcasLlamado(l).forEach(m => { meses[m.mes].push(m); if (m.sig) sig = m.sig; }));
+      const c = ll.filter(l => l.cuenta && l.vencido);
+      const gp = [...new Set(ll.flatMap(l => l.oms.map(o => o.grupo)).filter(Boolean))].join(" / ");
+      filas.push({ p, item, desc: ll[0].desc || p.desc, eq: ll[0].eqTxt, gp, ll, meses, venc: c.length, cum: c.filter(l => l.cumplido).length, sig });
+    });
+  });
+  return filas;
+}
+function celdaAnual(ms){
+  if (!ms.length) return "";
+  const top = MK_PRI.find(t => ms.some(m => m.t === t));
+  const n = ms.filter(m => m.t === top).length;
+  const venc = top === "rep" && ms.some(m => m.t === "rep" && m.venc);
+  return `<span class="mk ${top}" title="${esc(ms.map(m => m.tit).join("\n"))}">${MK_TXT[top]}${venc ? "!" : ""}${n > 1 ? `<sup>${n}</sup>` : ""}</span>`;
+}
+
+function renderAnual(){
+  const grupos = agrupacionesActivas();
+  if (!state.agr || !grupos.includes(state.agr)) state.agr = grupos[0];
+  const fa = state.anual || (state.anual = {});
+  const f = fa[state.agr] || (fa[state.agr] = { tema: "", q: "", gp: "", est: "" });
+  const plsG = M.planes.filter(p => agrupacionDe(p.tema) === state.agr);
+  const temas = M.temas.filter(t => plsG.some(p => p.tema === t));
+  if (f.tema && !temas.includes(f.tema)) f.tema = "";
+  const pls = f.tema ? plsG.filter(p => p.tema === f.tema) : plsG;
+  const a = agg(pls);
+  const desc = state.agr === AGR_OTROS ? "Temas que no están en ninguna agrupación" : (AGRUPACIONES.find(g => g.nombre === state.agr).temas.join(" · "));
+
+  $("view").innerHTML = `
+    <div class="view-head"><h2>Vista anual por agrupación</h2><p>Elegí una agrupación para ver el despliegue del año: dónde se cumplió cada OM y para cuándo quedó reprogramada</p></div>
+    <div class="agr-bar" role="group" aria-label="Agrupaciones">${grupos.map(g => {
+      const x = agg(M.planes.filter(p => agrupacionDe(p.tema) === g));
+      return `<button class="agr-btn${g === state.agr ? " active" : ""}" data-g="${esc(g)}" style="border-left-color:${g === state.agr ? "var(--accent)" : color(x.pct)}">
+        <span class="an">${esc(g)}</span><span class="ap" style="color:${color(x.pct)}">${pctTxt(x.pct)}</span>
+        <span class="am">${x.planes} planes · ${x.pend ? `${x.pend} pendiente${x.pend > 1 ? "s" : ""}` : "al día"}${x.nRep ? ` · ${x.nRep} reprog.` : ""}</span></button>`; }).join("")}</div>
+    <div class="view-head"><h2 style="font-size:16px">${esc(state.agr)}</h2><p>${esc(desc)}</p></div>
+    ${kpis(a)}
+    <div class="panel">
+      <div class="panel-head"><div><h3>Despliegue anual</h3><p class="panel-sub">Una fila por plan y equipo. Pasá el mouse por una marca para ver la OM y las fechas.</p></div>
+        <button class="btn" id="csvAnual">Descargar CSV</button></div>
+      <div class="chip-row" role="group" aria-label="Temas">
+        <button class="chip-btn${!f.tema ? " active" : ""}" data-t="">Todos los temas</button>
+        ${temas.map(t => { const x = agg(plsG.filter(p => p.tema === t)); return `<button class="chip-btn${f.tema === t ? " active" : ""}" data-t="${esc(t)}">${esc(t)}<span class="pct ${nivel(x.pct)}">${pctTxt(x.pct)}</span></button>`; }).join("")}
+      </div>
+      <div class="filters">
+        <input type="search" id="aQ" placeholder="Buscar plan, actividad o equipo" value="${esc(f.q)}" aria-label="Buscar">
+        <select id="aGp" aria-label="Grupo de planificación"><option value="">Todos los grupos de planificación</option></select>
+        <select id="aEst" aria-label="Estado">
+          <option value="">Todas las filas</option>
+          <option value="pend"${f.est === "pend" ? " selected" : ""}>Con vencidos sin cerrar</option>
+          <option value="rep"${f.est === "rep" ? " selected" : ""}>Con reprogramados</option>
+          <option value="ok"${f.est === "ok" ? " selected" : ""}>Al día</option>
+        </select>
+        <span class="count" id="aCount"></span>
+      </div>
+      <div class="legend">
+        <span><i class="mk ok">✓</i>Cumplido (mes de cierre)</span>
+        <span><i class="mk mov">›</i>Mes programado, se cumplió después</span>
+        <span><i class="mk orig">R</i>Mes programado original</span>
+        <span><i class="mk rep">↻</i>Reprogramado para ese mes (! = la nueva fecha ya pasó)</span>
+        <span><i class="mk bad">✕</i>Vencido sin cerrar</span>
+        <span><i class="mk fut">•</i>Por vencer</span>
+        <span><i class="mk exc">–</i>Excedente (no cuenta)</span>
+      </div>
+      <div class="plan-wrap" id="yr"></div>
+    </div>`;
+
+  const filas = filasAnuales(pls);
+  const gps = [...new Set(filas.flatMap(r => r.gp.split(" / ")).filter(Boolean))].sort();
+  if (f.gp && !gps.includes(f.gp)) f.gp = "";
+  $("aGp").innerHTML += gps.map(g => `<option value="${esc(g)}"${g === f.gp ? " selected" : ""}>${esc(g)}${GRUPOS_PLAN[g] ? " · " + esc(GRUPOS_PLAN[g]) : ""}</option>`).join("");
+
+  $("view").querySelectorAll(".agr-btn").forEach(b => b.addEventListener("click", () => { state.agr = b.dataset.g; saveCfg({ agr: state.agr }); renderAnual(); }));
+  $("view").querySelectorAll(".chip-btn").forEach(b => b.addEventListener("click", () => { f.tema = b.dataset.t; renderAnual(); }));
+  const upd = () => { f.q = $("aQ").value; f.gp = $("aGp").value; f.est = $("aEst").value; tablaAnual(filas, f); };
+  $("aQ").addEventListener("input", upd); $("aGp").addEventListener("change", upd); $("aEst").addEventListener("change", upd);
+  $("csvAnual").addEventListener("click", () => csvAnual(filtrarAnual(filas, f)));
+  tablaAnual(filas, f);
+}
+function filtrarAnual(filas, f){
+  const q = nf(f.q.trim());
+  const tiene = (r, t) => r.meses.some(ms => ms.some(m => m.t === t));
+  return filas.filter(r =>
+    (!q || nf(`${r.p.plan} ${r.desc} ${r.p.desc} ${r.eq}`).includes(q)) &&
+    (!f.gp || r.gp.split(" / ").includes(f.gp)) &&
+    (!f.est || (f.est === "pend" ? tiene(r, "bad") : f.est === "rep" ? tiene(r, "rep") : !tiene(r, "bad") && !tiene(r, "rep") && r.ll.length)));
+}
+function tablaAnual(filas, f){
+  const lista = filtrarAnual(filas, f);
+  $("aCount").textContent = `${lista.length} de ${filas.length} filas`;
+  const cm = M.C.mes, cols = 17;
+  let h = `<table class="yr"><thead><tr><th class="l info">Actividad · equipo</th><th>Gr. Pl.</th><th>Frecuencia</th>` +
+    MS.map((m, i) => `<th class="mo${i === cm ? " curm" : ""}">${m}</th>`).join("") + `<th>% a la fecha</th><th class="l">Pasa a ${M.C.anio + 1}</th></tr></thead><tbody>`;
+  if (!lista.length) h += `<tr><td colspan="${cols}"><div class="empty">Ninguna fila coincide con los filtros.</div></td></tr>`;
+  let temaAct = null;
+  lista.slice().sort((x, y) => M.temas.indexOf(x.p.tema) - M.temas.indexOf(y.p.tema) || x.p.plan.localeCompare(y.p.plan) || x.eq.localeCompare(y.eq))
+    .forEach(r => {
+      if (r.p.tema !== temaAct){
+        temaAct = r.p.tema;
+        const x = agg(M.planes.filter(p => p.tema === temaAct && agrupacionDe(p.tema) === state.agr));
+        h += `<tr class="grp"><td colspan="${cols}">${esc(temaAct)}<span class="caso">${x.cum}/${x.venc} vencidos cumplidos · ${pctTxt(x.pct)}</span></td></tr>`;
+      }
+      const pct = r.venc ? r.cum / r.venc : null;
+      h += `<tr><td class="info"><div class="act">${esc(r.desc)}</div>
+          <div class="act-meta"><span class="mono">${esc(r.p.plan)}</span>${r.eq ? ` · <span class="mono">${esc(r.eq)}</span>` : ""} · ${esc(r.p.tipo)}${r.ll.length ? "" : ` · <span class="caso warn">${esc(r.p.caso)}</span>`}</div></td>
+        <td class="mono" style="font-size:11px">${esc(r.gp || "—")}</td><td style="font-size:11.5px">${esc(r.p.frecTxt)}</td>` +
+        r.meses.map((ms, i) => `<td class="mo${i === cm ? " curm" : ""}">${celdaAnual(ms)}</td>`).join("") +
+        `<td style="font-weight:600;color:${color(pct)}">${pctTxt(pct)}</td><td class="l">${r.sig ? `<span class="nxt">↻ ${fmtF(r.sig)}/${r.sig.slice(2, 4)}</span>` : ""}</td></tr>`;
+    });
+  $("yr").innerHTML = h + "</tbody></table>";
+}
+function csvAnual(filas){
+  const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  const NOM = { ok: "Cumplido", bad: "Vencido sin cerrar", rep: "Reprogramado", orig: "Programado (reprogramado)", mov: "Programado (cumplido después)", fut: "Por vencer", exc: "Excedente" };
+  const rows = [["Agrupación", "Tema", "N° Plan", "Actividad", "Equipo/Ubicación", "Grupo planif.", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
+    .concat(filas.map(r => [state.agr, r.p.tema, r.p.plan, r.desc, r.eq, r.gp, r.p.frecTxt]
+      .concat(r.meses.map(ms => ms.map(m => NOM[m.t]).join(" + ")), [r.venc, r.cum, r.sig])));
+  const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const el = document.createElement("a"); el.href = URL.createObjectURL(blob);
+  el.download = `GPM_vista_anual_${nf(state.agr).replace(/[^a-z0-9]+/g, "_")}_${M.C.fecha}.csv`; document.body.appendChild(el); el.click(); el.remove();
+}
+
 /* ---------- Render general ---------- */
 function render(){
   construir();
-  if (!["Resumen", "Backlog", "Control de datos"].includes(state.vista) && !M.temas.includes(state.vista)) state.vista = "Resumen";
+  if (!["Resumen", "Vista anual", "Backlog", "Control de datos"].includes(state.vista) && !M.temas.includes(state.vista)) state.vista = "Resumen";
   renderTabs();
   if (state.vista === "Resumen") renderResumen();
   else if (state.vista === "Control de datos") renderControl();
   else if (state.vista === "Backlog") renderBacklog();
+  else if (state.vista === "Vista anual") renderAnual();
   else renderTema(state.vista);
   $("footer").textContent = `Año ${M.C.anio} · Corte ${fmtF(M.C.fecha)} · ${raw.om.length} OM leídas · ${raw.planes.length} filas de planes · Fuente: ${state.fuente === "demo" ? "datos de demostración" : "Google Sheets"} · ${M.excluidas.length} OM excluidas (NEJE/BLOQ) · ${M.anuladas.length} anuladas`;
 }
@@ -1113,6 +1348,7 @@ async function cargar(){
   $("sheetUrl").value = DEFAULT_URL || cfg.url || "";   // la URL fija del archivo tiene prioridad sobre la guardada en el navegador
   if (cfg.vista) state.vista = cfg.vista;
   if (cfg.bkBase) state.bkBase = cfg.bkBase;
+  if (cfg.agr) state.agr = cfg.agr;
   state.excl = !!cfg.excl; $("exclAnom").checked = state.excl;
   $("exclAnom").addEventListener("change", e => { state.excl = e.target.checked; saveCfg({ excl: state.excl }); render(); });
   llenarCorte();
