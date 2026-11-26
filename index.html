@@ -469,7 +469,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&
 const nk = (s) => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 
 let raw = { om: [], planes: [] };
-let state = { vista: "Resumen", corte: "hoy", excl: false, fuente: "demo", filtros: {}, abiertos: new Set() };
+let state = { sinOM: "incluir", vista: "Resumen", corte: "hoy", excl: false, fuente: "demo", filtros: {}, abiertos: new Set() };
 let M = null;          // modelo calculado
 let charts = {};
 
@@ -671,15 +671,20 @@ function construir(){
     lista.push(pl);
   });
 
+  /* Planes sin OM en el año ("Sin OM en el dashboard" y "Sin OM en el año"): se pueden ocultar del cálculo
+     y de las vistas, o ver solos en la Vista anual para revisarlos en SAP. */
+  const sinOM = lista.filter(p => !p.oms.length);
+  const visibles = state.sinOM === "incluir" ? lista : lista.filter(p => p.oms.length);
   const claves = Object.keys(TEMAS);
   const grupoDe = (t) => (TEMAS[t] && TEMAS[t].grupo) || "Temas";
-  const temas = [...new Set(lista.map(p => p.tema))].sort((a, b) => {
+  const ordenTemas = (lst) => [...new Set(lst.map(p => p.tema))].sort((a, b) => {
     const ga = GRUPOS.indexOf(grupoDe(a)), gb = GRUPOS.indexOf(grupoDe(b));
     const ka = claves.indexOf(a), kb = claves.indexOf(b);
     return (ga * 1000 + (ka < 0 ? 999 : ka)) - (gb * 1000 + (kb < 0 ? 999 : kb));
   });
+  const temas = ordenTemas(visibles), temasAll = ordenTemas(lista);
   const omExced = new Set(lista.flatMap(pl => pl.llamados.filter(l => l.exced).flatMap(l => l.oms.map(o => o.om))));
-  M = { C, planes: lista, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas, validas, omExced,
+  M = { C, planes: visibles, sinOM, temasAll, temas, grupoDe, fuera: [...fuera.values()], correctivas, masivas, validas, omExced,
         excluidas, anuladas, temasUnificados, sinActividad: [...sinActividad.values()], eliminados: eliminados.size };
 }
 
@@ -806,7 +811,7 @@ function renderResumen(){
   const pend = pendientes(M.planes);
   const tipos = ["Preventivo", "Predictivo"].map(t => ({ t, a: agg(M.planes.filter(p => p.tipo === t)) }));
   $("view").innerHTML = `
-    <div class="view-head"><h2>Resumen del GPM</h2><p>${M.planes.length} planes activos · ${a.items} equipos · año ${M.C.anio}</p></div>
+    <div class="view-head"><h2>Resumen del GPM</h2><p>${M.planes.length} planes activos · ${a.items} equipos · año ${M.C.anio}${state.sinOM !== "incluir" && M.sinOM.length ? ` · <b>${M.sinOM.length} planes sin OM en el año ocultos</b> (se cambia en Vista anual)` : ""}</p></div>
     ${kpis(a)}
     <div class="grid-2">
       <div class="panel"><h3>Cumplimiento por tema</h3><p class="panel-sub">Llamados cumplidos sobre llamados vencidos. Tocá un tema para ver sus planes.</p>
@@ -910,7 +915,7 @@ function renderMatriz(pls, f){
 
 /* ---------- Vista: Control de datos ---------- */
 function renderControl(){
-  const obs = M.planes.filter(p => !["Normal", "Exceso leve (ajuste de plan)", "Solo llamados futuros"].includes(p.caso))
+  const obs = (state.sinOM === "incluir" ? M.planes : M.planes.concat(M.sinOM)).filter(p => !["Normal", "Exceso leve (ajuste de plan)", "Solo llamados futuros"].includes(p.caso))
     .sort((a, b) => a.caso.localeCompare(b.caso) || a.tema.localeCompare(b.tema));
   const corr = M.correctivas, corrAb = corr.filter(o => !o.est.includes("CERRADA")).length;
   const fueraOM = M.fuera.reduce((s, f) => s + f.oms.length, 0);
@@ -1137,7 +1142,7 @@ const AGR_IDX = new Map();
 AGRUPACIONES.forEach(g => g.temas.forEach(t => AGR_IDX.set(kTema(t), g.nombre)));
 const agrupacionDe = (tema) => AGR_IDX.get(kTema(tema)) || AGR_OTROS;
 function agrupacionesActivas(){
-  const usadas = new Set(M.planes.map(p => agrupacionDe(p.tema)));
+  const usadas = new Set(M.planes.concat(M.sinOM).map(p => agrupacionDe(p.tema)));
   return AGRUPACIONES.map(g => g.nombre).concat(usadas.has(AGR_OTROS) ? [AGR_OTROS] : []);
 }
 const MK_TXT = { ok: "✓", bad: "✕", rep: "↻", orig: "R", mov: "›", fut: "•", exc: "–" };
@@ -1205,11 +1210,13 @@ function renderAnual(){
   if (!state.agr || !grupos.includes(state.agr)) state.agr = grupos[0];
   const fa = state.anual || (state.anual = {});
   const f = fa[state.agr] || (fa[state.agr] = { tema: "", q: "", est: "" });
-  const plsA = M.planes.filter(p => agrupacionDe(p.tema) === state.agr);
+  const solo = state.sinOM === "solo";
+  const base = solo ? M.sinOM : M.planes;
+  const plsA = base.filter(p => agrupacionDe(p.tema) === state.agr);
   const secs = SECTOR_ORDEN.filter(x => plsA.some(p => p.sector === x));
   if (state.sec && !secs.includes(state.sec)) state.sec = "";
   const plsG = state.sec ? plsA.filter(p => p.sector === state.sec) : plsA;
-  const temas = M.temas.filter(t => plsG.some(p => p.tema === t));
+  const temas = M.temasAll.filter(t => plsG.some(p => p.tema === t));
   if (f.tema && !temas.includes(f.tema)) f.tema = "";
   const pls = f.tema ? plsG.filter(p => p.tema === f.tema) : plsG;
   const a = agg(pls);
@@ -1218,15 +1225,30 @@ function renderAnual(){
   $("view").innerHTML = `
     <div class="view-head"><h2>Vista anual por agrupación</h2><p>Elegí una agrupación para ver el despliegue del año: dónde se cumplió cada OM y para cuándo quedó reprogramada</p></div>
     <div class="agr-bar" role="group" aria-label="Agrupaciones">${grupos.map(g => {
+      if (solo){
+        const n = M.sinOM.filter(p => agrupacionDe(p.tema) === g).length;
+        return `<button class="agr-btn${g === state.agr ? " active" : ""}" data-g="${esc(g)}" style="border-left-color:${g === state.agr ? "var(--accent)" : n ? "var(--warning-mid)" : "var(--border-strong)"}">
+          <span class="an">${esc(g)}</span><span class="ap" style="color:${n ? "var(--warning)" : "var(--text-faint)"}">${n}</span>
+          <span class="am">plan${n === 1 ? "" : "es"} sin OM en el año</span></button>`;
+      }
       const x = agg(M.planes.filter(p => agrupacionDe(p.tema) === g));
       return `<button class="agr-btn${g === state.agr ? " active" : ""}" data-g="${esc(g)}" style="border-left-color:${g === state.agr ? "var(--accent)" : color(x.pct)}">
         <span class="an">${esc(g)}</span><span class="ap" style="color:${color(x.pct)}">${pctTxt(x.pct)}</span>
         <span class="am">${x.planes} planes · ${x.pend ? `${x.pend} pendiente${x.pend > 1 ? "s" : ""}` : "al día"}${x.nRep ? ` · ${x.nRep} reprog.` : ""}</span></button>`; }).join("")}</div>
     <div class="view-head"><h2 style="font-size:16px">${esc(state.agr)}</h2><p>${esc(desc)}</p></div>
-    ${kpis(a)}
+    ${solo ? `<section class="kpi-row k3">
+      <div class="kpi-card k-warning"><p class="kpi-label">Planes sin OM en el año</p><p class="kpi-value">${pls.length}</p><p class="kpi-sub">de esta selección · ${M.sinOM.length} en todo el GPM</p></div>
+      <div class="kpi-card"><p class="kpi-label">Sin OM en el dashboard</p><p class="kpi-value">${pls.filter(p => p.caso === "Sin OM en el dashboard").length}</p><p class="kpi-sub">el plan no generó ninguna OM en la bajada de SAP</p></div>
+      <div class="kpi-card"><p class="kpi-label">Sin OM en el año</p><p class="kpi-value">${pls.filter(p => p.caso === "Sin OM en el año").length}</p><p class="kpi-sub">tiene OM, pero de otros años</p></div>
+    </section>` : kpis(a)}
     <div class="panel">
-      <div class="panel-head"><div><h3>Despliegue anual</h3><p class="panel-sub">Una fila por plan y equipo. Pasá el mouse por una marca para ver la OM y las fechas.</p></div>
+      <div class="panel-head"><div><h3>${solo ? "Planes sin OM para revisar en SAP" : "Despliegue anual"}</h3><p class="panel-sub">Una fila por plan y equipo. Pasá el mouse por una marca para ver la OM y las fechas.</p></div>
         <button class="btn" id="csvAnual">Descargar CSV</button></div>
+      <div class="chip-row" role="group" aria-label="Planes sin OM">
+        <span class="caso" style="align-self:center;margin-right:4px">Planes sin OM en el año (${M.sinOM.length}):</span>
+        ${[["incluir", "Incluir"], ["ocultar", "Ocultar del cálculo y la vista"], ["solo", "Ver solo estos"]].map(([v, t]) =>
+          `<button class="chip-btn${state.sinOM === v ? " active" : ""}" data-o="${v}">${t}</button>`).join("")}
+      </div>
       <div class="chip-row" role="group" aria-label="Sectores">
         <button class="chip-btn sec${!state.sec ? " active" : ""}" data-s="">Todos los sectores</button>
         ${secs.map(x => { const y = agg(plsA.filter(p => p.sector === x)); return `<button class="chip-btn sec${state.sec === x ? " active" : ""}" data-s="${esc(x)}">${esc(x)}<span class="pct ${nivel(y.pct)}">${pctTxt(y.pct)}</span></button>`; }).join("")}
@@ -1261,6 +1283,7 @@ function renderAnual(){
 
   $("view").querySelectorAll(".agr-btn").forEach(b => b.addEventListener("click", () => { state.agr = b.dataset.g; saveCfg({ agr: state.agr }); renderAnual(); }));
   $("view").querySelectorAll(".chip-btn[data-t]").forEach(b => b.addEventListener("click", () => { f.tema = b.dataset.t; renderAnual(); }));
+  $("view").querySelectorAll(".chip-btn[data-o]").forEach(b => b.addEventListener("click", () => { state.sinOM = b.dataset.o; saveCfg({ sinOM: state.sinOM }); render(); }));
   $("view").querySelectorAll(".chip-btn[data-s]").forEach(b => b.addEventListener("click", () => { state.sec = b.dataset.s; saveCfg({ sec: state.sec }); renderAnual(); }));
   const upd = () => { f.q = $("aQ").value; f.est = $("aEst").value; tablaAnual(filas, f); };
   $("aQ").addEventListener("input", upd); $("aEst").addEventListener("change", upd);
@@ -1282,12 +1305,12 @@ function tablaAnual(filas, f){
     MS.map((m, i) => `<th class="mo${i === cm ? " curm" : ""}">${m}</th>`).join("") + `<th>% a la fecha</th><th class="l">Pasa a ${M.C.anio + 1}</th></tr></thead><tbody>`;
   if (!lista.length) h += `<tr><td colspan="${cols}"><div class="empty">Ninguna fila coincide con los filtros.</div></td></tr>`;
   let temaAct = null;
-  lista.slice().sort((x, y) => M.temas.indexOf(x.p.tema) - M.temas.indexOf(y.p.tema) || x.p.plan.localeCompare(y.p.plan) || x.eq.localeCompare(y.eq))
+  lista.slice().sort((x, y) => M.temasAll.indexOf(x.p.tema) - M.temasAll.indexOf(y.p.tema) || x.p.plan.localeCompare(y.p.plan) || x.eq.localeCompare(y.eq))
     .forEach(r => {
       if (r.p.tema !== temaAct){
         temaAct = r.p.tema;
         const x = agg(M.planes.filter(p => p.tema === temaAct && agrupacionDe(p.tema) === state.agr));
-        h += `<tr class="grp"><td colspan="${cols}">${esc(temaAct)}<span class="caso">${x.cum}/${x.venc} vencidos cumplidos · ${pctTxt(x.pct)}</span></td></tr>`;
+        h += `<tr class="grp"><td colspan="${cols}">${esc(temaAct)}<span class="caso">${state.sinOM === "solo" ? `${lista.filter(r => r.p.tema === temaAct).length} planes sin OM` : `${x.cum}/${x.venc} vencidos cumplidos · ${pctTxt(x.pct)}`}</span></td></tr>`;
       }
       const pct = r.venc ? r.cum / r.venc : null;
       h += `<tr><td class="info"><div class="act">${esc(r.desc)}</div>
@@ -1301,8 +1324,8 @@ function tablaAnual(filas, f){
 function csvAnual(filas){
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const NOM = { ok: "Cumplido", bad: "Vencido sin cerrar", rep: "Reprogramado", orig: "Programado (reprogramado)", mov: "Programado (cumplido después)", fut: "Pendiente / por vencer", exc: "Excedente" };
-  const rows = [["Agrupación", "Tema", "N° Plan", "Actividad", "Equipo/Ubicación", "Sector", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
-    .concat(filas.map(r => [state.agr, r.p.tema, r.p.plan, r.desc, r.eq, r.gp, r.p.frecTxt]
+  const rows = [["Agrupación", "Tema", "N° Plan", "Situación", "Actividad", "Equipo/Ubicación", "Sector", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
+    .concat(filas.map(r => [state.agr, r.p.tema, r.p.plan, r.p.caso, r.desc, r.eq, r.gp, r.p.frecTxt]
       .concat(r.meses.map(ms => ms.map(m => NOM[m.t]).join(" + ")), [r.venc, r.cum, r.sig])));
   const blob = new Blob(["﻿" + rows.map(r => r.map(q).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const el = document.createElement("a"); el.href = URL.createObjectURL(blob);
@@ -1371,6 +1394,7 @@ async function cargar(){
   if (cfg.bkBase) state.bkBase = cfg.bkBase;
   if (cfg.agr) state.agr = cfg.agr;
   if (cfg.sec) state.sec = cfg.sec;
+  state.sinOM = ["incluir", "ocultar", "solo"].includes(cfg.sinOM) ? cfg.sinOM : "incluir";
   state.excl = !!cfg.excl; $("exclAnom").checked = state.excl;
   $("exclAnom").addEventListener("change", e => { state.excl = e.target.checked; saveCfg({ excl: state.excl }); render(); });
   llenarCorte();

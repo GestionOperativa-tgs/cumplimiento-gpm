@@ -24,3 +24,13 @@ Con el corte **Hoy**, un llamado del mes en curso que todavía no se cerró se c
 - Vencen los llamados programados hasta el último día del mes anterior.
 - Con el corte **Cierre de mes**, vence todo lo programado hasta el último día de ese mes.
 - El mismo criterio se aplica al backlog y al tablero de seguimiento (jostt).
+
+## Planes sin OM en el año
+
+En la Vista anual hay un selector **"Planes sin OM en el año"**. Abarca los casos "Sin OM en el dashboard" y "Sin OM en el año" (tienen OM, pero de otros años).
+
+- **Incluir:** comportamiento original.
+- **Ocultar del cálculo y la vista:** esos planes no se cuentan en ninguna vista (planes, equipos, llamados esperados, pestañas). Siguen apareciendo en Control de datos.
+- **Ver solo estos:** la grilla muestra solo esos planes, por agrupación, sector y tema, para revisarlos en SAP. El CSV trae la columna Situación.
+
+La elección queda guardada en el navegador. Esos planes no tienen llamados vencidos, así que no modifican el % de cumplimiento a la fecha.
