@@ -16,3 +16,11 @@ Pestaña **Vista anual**. Tiene botones por agrupación de temas y, dentro de ca
   - – Excedente sobre la frecuencia (no cuenta).
 - Las reprogramaciones que pasan al año siguiente se muestran en la última columna.
 - El Resumen incluye un panel de cumplimiento por agrupación que lleva a esta vista.
+
+## Margen de cierre (mes en curso)
+
+Con el corte **Hoy**, un llamado del mes en curso que todavía no se cerró se considera **pendiente**, no vencido, aunque su fecha ya haya pasado. El equipo de mantenimiento suele cerrar las OM cerca de fin de mes.
+
+- Vencen los llamados programados hasta el último día del mes anterior.
+- Con el corte **Cierre de mes**, vence todo lo programado hasta el último día de ese mes.
+- El mismo criterio se aplica al backlog y al tablero de seguimiento (jostt).

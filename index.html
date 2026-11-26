@@ -500,14 +500,19 @@ const fmtF = (s) => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "";
 /* ---------- Corte ---------- */
 function corteInfo(){
   const hoy = new Date(), anio = hoy.getFullYear();
-  if (state.corte === "hoy") return { anio, fecha: iso(hoy), mes: hoy.getMonth(), txt: "a hoy" };
+  /* Margen de cierre: con el corte "Hoy" el mes en curso no se considera vencido (las OM se suelen
+     cerrar cerca de fin de mes). Vence lo programado hasta el último día del mes anterior.
+     Con el corte "Cierre de mes" vence todo lo programado hasta el último día de ese mes. */
+  if (state.corte === "hoy") return { anio, fecha: iso(hoy), mes: hoy.getMonth(), hoy: true,
+    vencHasta: iso(new Date(anio, hoy.getMonth(), 0)), txt: `a hoy (${MESES[hoy.getMonth()]} en curso como pendiente)` };
   const m = +state.corte;
-  return { anio, fecha: iso(new Date(anio, m + 1, 0)), mes: m, txt: `al cierre de ${MESES[m]}` };
+  const f = iso(new Date(anio, m + 1, 0));
+  return { anio, fecha: f, mes: m, hoy: false, vencHasta: f, txt: `al cierre de ${MESES[m]}` };
 }
 
 /* ---------- Modelo ---------- */
 function construir(){
-  const C = corteInfo(), A = String(C.anio), frac = (C.mes + 1) / 12;
+  const C = corteInfo(), A = String(C.anio), frac = (C.hoy ? C.mes : C.mes + 1) / 12;   // meses ya vencidos
   const planes = new Map();
 
   /* Unificación de temas: se agrupa por el texto de la columna Tema sin distinguir mayúsculas,
@@ -594,7 +599,7 @@ function construir(){
     llam.forEach(l => {
       l.cumplido = l.oms.some(o => o.est.includes("CERRADA"));
       l.reprog = l.oms.some(o => o.est.includes("REPROGRAMADA"));
-      l.vencido = l.fmin <= C.fecha;
+      l.vencido = l.fmin <= C.vencHasta;
       l.anom = l.oms.length >= UMBRAL_MASIVA;
       l.cuenta = !(state.excl && l.anom);
       if (l.anom) masivas.push({ pl, l });
@@ -736,7 +741,7 @@ function kpis(a){
       <p class="kpi-sub">llamados vencidos sin OM cerrada</p></div>
     <div class="kpi-card k-warning"><p class="kpi-label">Próximos 30 días</p>
       <p class="kpi-value">${a.prox}</p>
-      <p class="kpi-sub">llamados a vencer después del corte</p></div>
+      <p class="kpi-sub">${M.C.hoy ? "pendientes del mes en curso y llamados a vencer" : "llamados a vencer después del corte"}</p></div>
   </section>`;
 }
 function chartMes(id, a){
@@ -750,7 +755,7 @@ function chartMes(id, a){
       { label: "Cumplidos", data: a.mOk, backgroundColor: "#2E9A57", stack: "s", borderRadius: 3 },
       { label: "Reprogramados", data: a.mRep, backgroundColor: "#D98A1C", stack: "s", borderRadius: 3 },
       { label: "Vencidos sin cerrar", data: a.mBad, backgroundColor: "#D2434A", stack: "s", borderRadius: 3 },
-      { label: "Por vencer", data: a.mFut, backgroundColor: "#C9D6E8", stack: "s", borderRadius: 3 }
+      { label: "Pendiente del mes / por vencer", data: a.mFut, backgroundColor: "#C9D6E8", stack: "s", borderRadius: 3 }
     ]},
     options: { responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } },
@@ -855,7 +860,7 @@ function renderTema(t){
         <span><i class="cell ok" style="min-width:14px;height:12px"></i>Cumplidos</span>
         <span><i class="cell bad" style="min-width:14px;height:12px"></i>Vencidos sin cerrar</span>
         <span><i class="cell rep" style="min-width:14px;height:12px"></i>Reprogramados</span>
-        <span><i class="cell fut" style="min-width:14px;height:12px"></i>Por vencer</span>
+        <span><i class="cell fut" style="min-width:14px;height:12px"></i>Pendiente del mes en curso / por vencer</span>
         <span><i class="cell exc" style="min-width:14px;height:12px"></i>Excedente sobre la frecuencia (no cuenta)</span>
       </div>
       <div class="plan-wrap" id="mx"></div>
@@ -1009,7 +1014,7 @@ function modeloBacklog(){
     .map(o => {
       const z = zonaDe(o);
       const tarea = base === "sap" ? (o.trab > 0 ? o.trab : BACKLOG.horasTarea) : BACKLOG.horasTarea;
-      return Object.assign({}, o, z, { tarea, vencida: o.fi <= C.fecha, edad: o.fi <= C.fecha ? dias(o.fi, C.fecha) : 0,
+      return Object.assign({}, o, z, { tarea, vencida: o.fi <= C.vencHasta, edad: o.fi <= C.vencHasta ? dias(o.fi, C.fecha) : 0,
         tipo: !o.plan ? "Correctivo" : PREDICTIVAS.includes(String(o.clase).toUpperCase()) ? "Predictivo" : "Preventivo" });
     });
   // el viaje se cuenta una sola vez por lugar y día
@@ -1166,7 +1171,8 @@ function marcasLlamado(l){
     return [{ mes: l.mes, t: "rep", tit: tit("sin nueva fecha"), venc: true }];
   }
   if (l.vencido) return [{ mes: l.mes, t: "bad", tit: `${base} · vencido sin cerrar (programado ${fmtF(l.fmin)})` }];
-  return [{ mes: l.mes, t: "fut", tit: `${base} · por vencer (programado ${fmtF(l.fmin)})` }];
+  const enCurso = M.C.hoy && l.mes === M.C.mes;
+  return [{ mes: l.mes, t: "fut", tit: `${base} · ${enCurso ? "pendiente del mes en curso" : "por vencer"} (programado ${fmtF(l.fmin)})` }];
 }
 
 function filasAnuales(pls){
@@ -1245,7 +1251,7 @@ function renderAnual(){
         <span><i class="mk orig">R</i>Mes programado original</span>
         <span><i class="mk rep">↻</i>Reprogramado para ese mes (! = la nueva fecha ya pasó)</span>
         <span><i class="mk bad">✕</i>Vencido sin cerrar</span>
-        <span><i class="mk fut">•</i>Por vencer</span>
+        <span><i class="mk fut">•</i>Pendiente del mes en curso / por vencer</span>
         <span><i class="mk exc">–</i>Excedente (no cuenta)</span>
       </div>
       <div class="plan-wrap" id="yr"></div>
@@ -1294,7 +1300,7 @@ function tablaAnual(filas, f){
 }
 function csvAnual(filas){
   const q = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-  const NOM = { ok: "Cumplido", bad: "Vencido sin cerrar", rep: "Reprogramado", orig: "Programado (reprogramado)", mov: "Programado (cumplido después)", fut: "Por vencer", exc: "Excedente" };
+  const NOM = { ok: "Cumplido", bad: "Vencido sin cerrar", rep: "Reprogramado", orig: "Programado (reprogramado)", mov: "Programado (cumplido después)", fut: "Pendiente / por vencer", exc: "Excedente" };
   const rows = [["Agrupación", "Tema", "N° Plan", "Actividad", "Equipo/Ubicación", "Sector", "Frecuencia"].concat(MS, ["Vencidos", "Cumplidos", "Pasa al año siguiente"])]
     .concat(filas.map(r => [state.agr, r.p.tema, r.p.plan, r.desc, r.eq, r.gp, r.p.frecTxt]
       .concat(r.meses.map(ms => ms.map(m => NOM[m.t]).join(" + ")), [r.venc, r.cum, r.sig])));
